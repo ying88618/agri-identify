@@ -1,0 +1,50 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# ---------- 虚拟环境 ----------
+.venv/
+venv/
+env/
+
+# ---------- 密钥 / 本地配置 ----------
+# .env 含 API Key 与 JWT 密钥，绝不入库；键名见 .env.example
+.env
+.env.local
+.env.*.local
+
+# ---------- IDE / OS ----------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---------- 测试缓存 ----------
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ---------- 数据集与评测产物 ----------
+# crawler/data 约 30MB，且绝大多数可由脚本重新生成，默认不入库
+crawler/data/*.jsonl
+crawler/data/*.txt
+crawler/data/*.png
+crawler/data/*.json
+crawler/data/archive_small/
+
+# 例外：保留「复现入库语料」与「README 所引用指标」对应的最小文件集
+!crawler/data/agri_pests.jsonl
+!crawler/data/multiturn_40.jsonl
+!crawler/data/multiturn_40_baseline_bge.jsonl
+!crawler/data/multiturn_40_qwen3rerank.jsonl
+
+# ---------- 本地备份 ----------
+# crawler/dump_agri.py 的产物(含向量, 几十 MB), 绝不入库
+backups/
+
+uploads/
+
+关机.bat
