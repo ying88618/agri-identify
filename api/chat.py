@@ -68,27 +68,19 @@ async def chat_stream(req: ChatRequest, user_id: int = Depends(get_current_user)
     if req.image_id:
         try:
             # 先确认图片存在且属于当前用户（顺带校验 image_id 格式）。
-            # 用 ensure_exists 而不是直接 resolve_image_url：后者会把整个文件
-            # 读出来做 base64，若随后命中缓存，这次读取就完全白费了。
             ensure_exists(user_id, req.image_id)
         except ImageError as e:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
 
         # 先查 VL 描述缓存。前端每一轮都会带同一个 image_id，不缓存的话每轮都要
-        # 重传几百 KB 图片 + 等一次 VL，且两次描述可能不一致 —— 而 core/memory.py
-        # 的设计恰好假设"首条描述常驻不变"（见该模块 docstring 的【首条常驻】）。
         image_desc = read_cached_description(user_id, req.image_id)
         if image_desc is None:
             image_desc = await describe_image(
                 resolve_image_url(user_id, req.image_id), req.question
             )
-            # 只在描述非空时写缓存：describe_image 失败会返回空串，
-            # 把空串也缓存下来的话，一次网络抖动就会让这张图永久"失明"。
             if image_desc:
                 write_cached_description(user_id, req.image_id, image_desc)
     elif req.image_url:
-        # 外部公网 URL 没有 image_id 可作缓存键，不做缓存
-        # （且下载方是远端 VL 服务，与本机文件无关）。
         image_desc = await describe_image(req.image_url, req.question)
     else:
         image_desc = ""
@@ -170,3 +162,9 @@ async def chat_stream(req: ChatRequest, user_id: int = Depends(get_current_user)
         media_type="text/event-stream",
         ping=15,
     )
+
+"""
+检查数据
+cd E:\agri-agent
+.\.venv\Scripts\python.exe -c "from pymilvus import MilvusClient; c=MilvusClient(uri='http://localhost:19530'); cols=list(dict.fromkeys(c.list_collections())); print('collections:', cols); [ (c.load_collection(x), print(' ', x, c.query(x, filter='', output_fields=['count(*)'])[0]['count(*)'])) for x in cols ]"
+"""

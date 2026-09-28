@@ -41,6 +41,9 @@ crawler/data/archive_small/
 !crawler/data/multiturn_40_baseline_bge.jsonl
 !crawler/data/multiturn_40_qwen3rerank.jsonl
 
+# 实验运行日志(每次跑都覆盖, 属产物而非源码)
+judge_out.txt
+
 # ---------- 本地备份 ----------
 # crawler/dump_agri.py 的产物(含向量, 几十 MB), 绝不入库
 backups/

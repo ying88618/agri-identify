@@ -8,6 +8,8 @@ import os
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
+from .config import DESCRIBE_PROMPT_VERSION
+
 load_dotenv()   # 本模块 import 时即读取 OPENAI_API_KEY/VL_MODEL_NAME，须先加载 .env
 
 logger = logging.getLogger("vision")
@@ -20,19 +22,22 @@ _client = AsyncOpenAI(
 VL_MODEL = os.getenv("VL_MODEL_NAME", "").strip()
 DESCRIBE_TIMEOUT = 30
 
+DESCRIBE_PROMPT = """你是一名农业植保专家。请看这张照片，用中文客观描述你在图上【实际看到】的症状特征，供后续检索病害资料。
 
-DESCRIBE_PROMPT = """你是一名农业植保专家。请仔细观察用户提供的图片，输出一份**客观、结构化**的症状描述，供后续检索知识库判断病虫害使用。
+请用一段通顺的话描述（不要逐条列字段、不要分行罗列）。下面几点只是提示可以从哪些角度观察，**不是必须逐条覆盖**；图上不明显的角度就跳过，不要为了写全而硬凑：
+· 病斑的大小与形状（若病斑细小/模糊、判断不出形状，就写"形状不明显"，不要硬套）
+· 病斑中心色、边缘色，边缘是否有黄色晕圈或隆起
+· 分布位置（叶尖/叶缘/叶脉间/老叶/新叶）
+· 表面是否有霉层、粉状物、锈色孢子堆、黑色小点、虫体或网丝
+· 叶片整体状态（萎蔫/卷曲/黄化/枯死）
 
-要求:
-1. 只描述图片中客观可见的信息(部位/颜色/形状/大小/分布/数量), 不要直接给出病虫害名称结论;
-2. 若图片不清晰或无法判断, 如实说明, 不要编造;
-3. 若图中没有植物/病虫害相关对象, 说明你看到的内容;
-4. 用简洁的中文分条输出, 控制在 150 字以内。
-示例输出:
-- 部位: 叶片正面
-- 症状: 圆形黄褐色病斑, 边缘有黄色晕圈, 直径约 3~5mm
-- 分布: 老叶较多, 新叶未见
-- 其他: 无明显虫体"""
+严格要求：
+1. 只写你确实看到的，不确定的就不写；【禁止】写"未见""无异常"等占位词；
+2. 【禁止】说出任何病害名称；
+3. 【禁止】提及作物种类；
+4. 总字数 100 字以内；
+5. 只有当叶片确实完全健康、毫无症状时，才回复这六个字：无明显病症；
+6. 若图中没有植物叶片、或图片过于模糊无法辨认，就如实说明你看到了什么，不要编造症状。"""
 
 
 async def describe_image(image_url: str, question: str = "", max_len: int = 300) -> str:
@@ -67,7 +72,8 @@ async def describe_image(image_url: str, question: str = "", max_len: int = 300)
         text = (resp.choices[0].message.content or "").strip()
         if len(text) > max_len:
             text = text[:max_len]
-        logger.info("describe_image done len=%d", len(text))
+        logger.info("describe_image done len=%d prompt_v=%d",
+                    len(text), DESCRIBE_PROMPT_VERSION)
         return text
     except Exception as e:
         logger.warning("describe_image failed: %s", e)

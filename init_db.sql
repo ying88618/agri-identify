@@ -43,11 +43,6 @@ FLUSH PRIVILEGES;
 -- 期望只看到 agri_agent.* 上的那几条，不应出现任何通配或别的库名。
 SHOW GRANTS FOR 'agri'@'localhost';
 
--- ---- 6) [可选] 手工建表 ----
--- create_all() 生成的就是这个结构，提前知道它长什么样有价值（尤其将来加索引时）。
--- VARCHAR(64) 在 MySQL 上是硬限制（SQLite 的 String(64) 只是 TEXT，不拦截超长），
--- 所以必须与后续 Pydantic 模型的 max_length=64 保持一致。
--- 唯一索引无需前缀长度：64 × 4(utf8mb4) = 256 字节，远低于 InnoDB 的 3072 上限。
 /*
 CREATE TABLE IF NOT EXISTS agri_agent.users (
   id            INT          NOT NULL AUTO_INCREMENT,

@@ -43,8 +43,6 @@ def kb_sources(results: list[dict] | None) -> list[dict]:
                 "crop": r.get("crop") or "",
                 "disease": r.get("disease") or "",
                 "section": r.get("section") or "",
-                # 旧库用 file_name、农业库用 source_file，retriever 已统一过，
-                # 这里再兜一次是为了容忍直接手写 dict 的调用方
                 "source_file": r.get("source_file") or r.get("file_name") or "",
                 "relevance": round(float(r.get("score") or 0.0), 4),
                 "excerpt": excerpt(r.get("content", "")),
