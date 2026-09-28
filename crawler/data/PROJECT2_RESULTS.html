@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>农业病虫害识别 Agent（项目2）— 实测数据留档</title>
+<style>
+  :root{
+    --green:#2b6b4a; --green-bg:#e9f4ee; --green-line:#bfdccb;
+    --red:#b0382e;   --red-bg:#fdeceb;   --red-line:#f0c4c0;
+    --amber:#95610f; --amber-bg:#fdf4e3; --amber-line:#eed9ad;
+    --ink:#1c2126; --muted:#69737f; --line:#e2e7ed; --bg:#f5f7f9; --card:#ffffff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans SC","Hiragino Sans GB",sans-serif;
+    font-size:16px; line-height:1.75; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1060px; margin:0 auto; padding:40px 22px 80px}
+  header.doc{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:30px 32px; margin-bottom:22px;
+  }
+  header.doc h1{
+    margin:0 0 6px; font-size:26px; line-height:1.35; letter-spacing:.2px;
+  }
+  header.doc h1 span.sub{display:block; font-size:15px; font-weight:400; color:var(--muted); margin-top:8px}
+  .meta{color:var(--muted); font-size:13.5px; margin-top:14px; padding-top:14px; border-top:1px dashed var(--line)}
+  .meta code{font-size:12.5px}
+
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin:22px 0 0}
+  .kpi{background:var(--green-bg); border:1px solid var(--green-line); border-radius:10px; padding:14px 16px}
+  .kpi .v{font-size:23px; font-weight:700; color:var(--green); letter-spacing:-.3px; line-height:1.2}
+  .kpi .k{font-size:12.5px; color:#4a6355; margin-top:3px}
+  .kpi.plain{background:#fff; border-color:var(--line)}
+  .kpi.plain .v{color:var(--ink)}
+
+  .toc{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 26px; margin-bottom:22px}
+  .toc h2{margin:0 0 12px; font-size:15px; color:var(--muted); font-weight:600; letter-spacing:.5px}
+  .toc ol{margin:0; padding-left:20px; columns:2; column-gap:34px}
+  .toc li{margin:3px 0; font-size:14.5px}
+  @media (max-width:700px){ .toc ol{columns:1} }
+  .toc a{color:var(--green); text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+
+  section{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:26px 32px 30px; margin-bottom:20px;
+  }
+  h2.sec{
+    font-size:19.5px; margin:0 0 18px; padding-bottom:12px;
+    border-bottom:2px solid var(--green-line);
+  }
+  h2.sec .num{
+    display:inline-block; min-width:30px; height:30px; line-height:30px; text-align:center;
+    background:var(--green); color:#fff; border-radius:8px; font-size:14.5px;
+    margin-right:11px; vertical-align:2px; padding:0 7px;
+  }
+  h3{font-size:16px; margin:26px 0 12px; color:#2c3a33}
+
+  p{margin:13px 0}
+  ul,ol{margin:13px 0; padding-left:24px}
+  li{margin:6px 0}
+  li p{margin:8px 0}
+
+  code{
+    background:#eef1f4; border:1px solid #e0e5ea; border-radius:4px;
+    padding:1px 5px; font-family:"Cascadia Code","Consolas","SFMono-Regular",monospace;
+    font-size:13.5px; color:#2e4a3d; white-space:nowrap;
+  }
+
+  .tbl-wrap{overflow-x:auto; margin:16px 0; -webkit-overflow-scrolling:touch}
+  table{width:100%; border-collapse:separate; border-spacing:0; font-size:14.5px; border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  thead th{
+    background:#eef2f0; color:#37473f; text-align:left; font-weight:600;
+    padding:10px 13px; border-bottom:1px solid var(--line); white-space:nowrap;
+  }
+  tbody td{padding:9px 13px; border-bottom:1px solid #eef1f4; vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:nth-child(even){background:#fafbfc}
+  tbody tr:hover{background:#f2f7f4}
+  td.num,th.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+  td.dim{color:var(--muted)}
+
+  strong{font-weight:700}
+  .win{color:var(--green)}
+  .bad{color:var(--red)}
+  .warn{color:var(--amber)}
+  .plainstrong{font-weight:700}
+
+  .tag{
+    display:inline-block; font-size:12.5px; line-height:1.5; padding:1px 8px;
+    border-radius:20px; border:1px solid; white-space:nowrap; font-weight:600;
+  }
+  .t-bad{background:var(--red-bg); border-color:var(--red-line); color:var(--red)}
+  .t-amber{background:var(--amber-bg); border-color:var(--amber-line); color:var(--amber)}
+  .t-ok{background:var(--green-bg); border-color:var(--green-line); color:var(--green)}
+
+  .callout{
+    border-left:4px solid var(--green); background:var(--green-bg);
+    border-radius:0 10px 10px 0; padding:14px 18px; margin:18px 0; font-size:15px;
+  }
+  .callout b{color:#1f4f38}
+  .callout.warn{border-left-color:var(--amber); background:var(--amber-bg)}
+  .callout.warn b{color:#6d4609}
+  .callout.err{border-left-color:var(--red); background:var(--red-bg)}
+  .callout.err b{color:#7d251d}
+  .callout p:first-child{margin-top:0}
+  .callout p:last-child{margin-bottom:0}
+
+  blockquote{
+    margin:16px 0; padding:12px 18px; background:#f8f9fb;
+    border-left:3px solid #c9d2da; border-radius:0 8px 8px 0;
+    color:#3d4750; font-size:14.5px;
+  }
+  blockquote p:first-child{margin-top:0}
+  blockquote p:last-child{margin-bottom:0}
+
+  .hi-row{background:var(--green-bg) !important}
+  .hi-row:hover{background:#e2efe8 !important}
+  .lo-row{background:var(--red-bg) !important}
+  .lo-row:hover{background:#fbe0de !important}
+
+  footer.doc{color:var(--muted); font-size:13px; text-align:center; margin-top:30px; line-height:1.9}
+
+  @media (max-width:640px){
+    .wrap{padding:20px 12px 50px}
+    section{padding:20px 17px 24px}
+    header.doc{padding:22px 18px}
+    header.doc h1{font-size:21px}
+    table{font-size:13.5px}
+    thead th,tbody td{padding:8px 9px}
+  }
+  @media print{
+    body{background:#fff; font-size:11.5pt}
+    .wrap{max-width:none; padding:0}
+    header.doc,section,.toc{border:none; border-radius:0; padding:0 0 14px; margin-bottom:12px; break-inside:auto}
+    .toc{display:none}
+    h2.sec{border-bottom:1px solid #999; break-after:avoid}
+    thead th{background:#eee !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+    tbody tr:nth-child(even),.hi-row,.lo-row,.callout,.tag,.kpi{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+    section{break-before:auto}
+    table{break-inside:avoid; font-size:10pt}
+    tr{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>农业病虫害识别 Agent（项目2）
+    <span class="sub">实测数据留档 · 检索 / 多轮对话 / 多模态 rerank 评测</span>
+  </h1>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v">51.2%</div><div class="k">检索命中 @5（新线上）</div></div>
+    <div class="kpi"><div class="v">+12.2pt</div><div class="k">@5 相比旧配置提升</div></div>
+    <div class="kpi"><div class="v">6.5%</div><div class="k">健康样本误报率</div></div>
+    <div class="kpi"><div class="v">75.0%</div><div class="k">多轮 5 轮内确诊</div></div>
+    <div class="kpi plain"><div class="v">620</div><div class="k">评测样本（21 类）</div></div>
+  </div>
+
+  <div class="meta">
+    生成日期：2026-09-15 ｜ 所有数字均由 <code>crawler/data/</code> 下明细文件重新计算得出（非引用历史口述）<br>
+    数据目录：<code>agri-agent/crawler/data/</code>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s0">评测口径（务必先读）</a></li>
+    <li><a href="#s1">检索基线（5 个配置）</a></li>
+    <li><a href="#s2">显著性检验（配对 McNemar）</a></li>
+    <li><a href="#s3">按类诊断（21 类）</a></li>
+    <li><a href="#s4">番茄专项</a></li>
+    <li><a href="#s5">描述质量：prompt 迭代</a></li>
+    <li><a href="#s6">阈值标定依据</a></li>
+    <li><a href="#s7">多轮对话端到端</a></li>
+    <li><a href="#s8">实验 B：多模态 rerank</a></li>
+    <li><a href="#s9">数据质量处置：Grape___Esca 剔除</a></li>
+    <li><a href="#s10">数据文件清单</a></li>
+    <li><a href="#s11">待办 / 已知问题</a></li>
+  </ol>
+</nav>
+
+<!-- ============ 0 ============ -->
+<section id="s0">
+  <h2 class="sec"><span class="num">0</span>评测口径（务必先读）</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th style="width:22%">项</th><th>设定</th></tr></thead>
+    <tbody>
+      <tr><td>数据集</td><td>PlantVillage，<strong>21 类</strong>（<code>Grape___Esca</code> 已剔除，原因见 §9）</td></tr>
+      <tr><td>样本数</td><td><strong>620</strong> = 病害 420 + 健康 200（每类 20 张）</td></tr>
+      <tr><td>检索配置</td><td>混合检索(hybrid) + 作物过滤 + <code>section=危害症状</code></td></tr>
+      <tr><td>指标</td><td><strong>HitRate@K</strong> = 正确病害进入 Top-K 候选的比例</td></tr>
+      <tr><td>健康误报</td><td>健康样本中 top1 分数 ≥ <strong>0.5</strong>（线上阈值）的比例</td></tr>
+      <tr><td>显著性</td><td>配对 McNemar 检验（同一样本集合逐样本配对）</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ 1 ============ -->
+<section id="s1">
+  <h2 class="sec"><span class="num">1</span>检索基线（5 个配置，620 样本）</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>配置</th>
+        <th class="num">@1</th><th class="num">@3</th><th class="num">@5</th><th class="num">@20</th>
+        <th class="num">健康误报</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>v3 描述 + <strong>bge-reranker-v2-m3</strong>（旧线上）</td>
+        <td class="num">11.2%</td><td class="num">31.7%</td><td class="num">39.0%</td><td class="num">67.6%</td><td class="num">6.5%</td>
+      </tr>
+      <tr class="hi-row">
+        <td>v3 描述 + <strong>Qwen3-Reranker-8B</strong>（新线上）</td>
+        <td class="num">15.7%</td><td class="num">35.7%</td><td class="num"><strong class="win">51.2%</strong></td><td class="num">67.6%</td><td class="num">6.5%</td>
+      </tr>
+      <tr>
+        <td>32B 描述 + Qwen3-Reranker</td>
+        <td class="num"><strong>21.0%</strong></td><td class="num">35.5%</td><td class="num">47.1%</td><td class="num"><strong>71.7%</strong></td><td class="num"><span class="tag t-amber">26.5%</span></td>
+      </tr>
+      <tr>
+        <td>v4 描述 + Qwen3-Reranker</td>
+        <td class="num">17.1%</td><td class="num">34.8%</td><td class="num">49.3%</td><td class="num">66.0%</td><td class="num">11.5%</td>
+      </tr>
+      <tr>
+        <td>v5 描述 + Qwen3-Reranker</td>
+        <td class="num">16.0%</td><td class="num">36.0%</td><td class="num"><strong>51.7%</strong></td><td class="num">69.8%</td><td class="num">17.0%</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>读法与关键结论</h3>
+  <ul>
+    <li>换 reranker 提升集中在 <strong>@5（+12.2pt）</strong>，而 <strong>@20 持平（67.6%）</strong> → 典型「纯排序改善」，瓶颈在排序不在召回</li>
+    <li>换 32B 描述 @1/@20 最高，但<strong>健康误报 26.5%</strong>（4 倍于基线），实用代价大</li>
+    <li>v5 描述 @5 最高(51.7%)，描述质量也是三版里最好的（见 §5），但其<strong>健康误报 17.0%</strong> 偏高，故未采用</li>
+    <li><strong class="win">最终采用：v3 描述 + Qwen3-Reranker-8B + 阈值 0.5</strong>（唯一误报与基线持平的组合）</li>
+  </ul>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="s2">
+  <h2 class="sec"><span class="num">2</span>显著性检验（v3+bge → v3+Qwen3-Reranker，配对）</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th class="num">K</th><th class="num">救回</th><th class="num">丢掉</th><th class="num">p 值</th><th>判定</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td class="num">51</td><td class="num">32</td><td class="num">0.0475</td><td><span class="tag t-ok">显著</span></td></tr>
+      <tr><td class="num">3</td><td class="num">45</td><td class="num">28</td><td class="num">0.0604</td><td><span class="tag t-bad">临界</span></td></tr>
+      <tr class="hi-row"><td class="num"><strong>5</strong></td><td class="num"><strong>62</strong></td><td class="num"><strong>11</strong></td><td class="num"><strong>0.0000</strong></td><td><span class="tag t-ok">强显著</span></td></tr>
+      <tr><td class="num">20</td><td class="num">0</td><td class="num">0</td><td class="num">1.0000</td><td><span class="tag t-bad">完全不变</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout">
+    <b>@20 救回 0 / 丢掉 0 —— 两代 reranker 的候选池完全一致</b>，说明改善 100% 来自重排序。
+  </div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="s3">
+  <h2 class="sec"><span class="num">3</span>按类诊断（21 类，bge → Qwen3）</h2>
+  <p>诊断口径：<span class="tag t-bad">召回弱</span> = 新模型 @20 &lt; 70%；<span class="tag t-amber">排序弱</span> = @20 ≥ 70% 但 @5 &lt; 40%；<span class="tag t-ok">正常</span> = 其余。</p>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>PlantVillage 类</th>
+        <th class="num">n</th><th class="num">bge@5</th><th class="num">bge@20</th>
+        <th class="num">新@5</th><th class="num">新@20</th><th class="num">@5 变化</th><th>诊断</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Tomato___Bacterial_spot</td><td class="num">20</td><td class="num">0%</td><td class="num">0%</td><td class="num">0%</td><td class="num">0%</td><td class="num">+0%</td><td><span class="tag t-bad">召回弱</span></td></tr>
+      <tr><td>Tomato___Septoria_leaf_spot</td><td class="num">20</td><td class="num">0%</td><td class="num">10%</td><td class="num">0%</td><td class="num">10%</td><td class="num">+0%</td><td><span class="tag t-bad">召回弱</span></td></tr>
+      <tr><td>Tomato___Tomato_mosaic_virus</td><td class="num">20</td><td class="num">10%</td><td class="num">15%</td><td class="num">5%</td><td class="num">15%</td><td class="num">−5%</td><td><span class="tag t-bad">召回弱</span></td></tr>
+      <tr><td>Tomato___Spider_mites</td><td class="num">20</td><td class="num">10%</td><td class="num">20%</td><td class="num">15%</td><td class="num">20%</td><td class="num">+5%</td><td><span class="tag t-bad">召回弱</span></td></tr>
+      <tr><td>Orange___Haunglongbing</td><td class="num">20</td><td class="num">35%</td><td class="num">40%</td><td class="num">30%</td><td class="num">40%</td><td class="num">−5%</td><td><span class="tag t-bad">召回弱</span></td></tr>
+      <tr><td>Tomato___Leaf_Mold</td><td class="num">20</td><td class="num">25%</td><td class="num">40%</td><td class="num">35%</td><td class="num">40%</td><td class="num">+10%</td><td><span class="tag t-bad">召回弱</span></td></tr>
+      <tr><td>Tomato___Early_blight</td><td class="num">20</td><td class="num">45%</td><td class="num">55%</td><td class="num">55%</td><td class="num">55%</td><td class="num">+10%</td><td><span class="tag t-bad">召回弱</span></td></tr>
+      <tr><td>Corn___Common_rust</td><td class="num">20</td><td class="num">25%</td><td class="num">60%</td><td class="num">25%</td><td class="num">60%</td><td class="num">+0%</td><td><span class="tag t-bad">召回弱</span></td></tr>
+      <tr><td>Corn___Northern_Leaf_Blight</td><td class="num">20</td><td class="num">20%</td><td class="num">60%</td><td class="num">30%</td><td class="num">60%</td><td class="num">+10%</td><td><span class="tag t-bad">召回弱</span></td></tr>
+      <tr><td>Apple___Cedar_apple_rust</td><td class="num">20</td><td class="num">0%</td><td class="num">80%</td><td class="num">5%</td><td class="num">80%</td><td class="num">+5%</td><td><span class="tag t-amber">排序弱</span></td></tr>
+      <tr><td>Apple___Black_rot</td><td class="num">20</td><td class="num">5%</td><td class="num">85%</td><td class="num">5%</td><td class="num">85%</td><td class="num">+0%</td><td><span class="tag t-amber">排序弱</span></td></tr>
+      <tr class="hi-row"><td><strong>Apple___Apple_scab</strong></td><td class="num">20</td><td class="num">0%</td><td class="num">80%</td><td class="num"><strong>60%</strong></td><td class="num">80%</td><td class="num"><strong class="win">+60%</strong></td><td><span class="tag t-ok">正常</span></td></tr>
+      <tr class="hi-row"><td><strong>Tomato___Late_blight</strong></td><td class="num">20</td><td class="num">0%</td><td class="num">90%</td><td class="num"><strong>65%</strong></td><td class="num">90%</td><td class="num"><strong class="win">+65%</strong></td><td><span class="tag t-ok">正常</span></td></tr>
+      <tr class="lo-row"><td><strong>Peach___Bacterial_spot</strong></td><td class="num">20</td><td class="num">90%</td><td class="num">90%</td><td class="num"><strong>65%</strong></td><td class="num">90%</td><td class="num"><strong class="bad">−25%</strong></td><td><span class="tag t-ok">正常</span> <span class="bad">← 唯一明显回退</span></td></tr>
+      <tr><td>Strawberry___Leaf_scorch</td><td class="num">20</td><td class="num">75%</td><td class="num">95%</td><td class="num">80%</td><td class="num">95%</td><td class="num">+5%</td><td><span class="tag t-ok">正常</span></td></tr>
+      <tr><td>Corn___Gray_leaf_spot</td><td class="num">20</td><td class="num">100%</td><td class="num">100%</td><td class="num">100%</td><td class="num">100%</td><td class="num">+0%</td><td><span class="tag t-ok">正常</span></td></tr>
+      <tr><td>Potato___Early_blight</td><td class="num">20</td><td class="num">100%</td><td class="num">100%</td><td class="num">100%</td><td class="num">100%</td><td class="num">+0%</td><td><span class="tag t-ok">正常</span></td></tr>
+      <tr><td>Potato___Late_blight</td><td class="num">20</td><td class="num">100%</td><td class="num">100%</td><td class="num">100%</td><td class="num">100%</td><td class="num">+0%</td><td><span class="tag t-ok">正常</span></td></tr>
+      <tr class="hi-row"><td><strong>Grape___Leaf_blight</strong></td><td class="num">20</td><td class="num">15%</td><td class="num">100%</td><td class="num"><strong>100%</strong></td><td class="num">100%</td><td class="num"><strong class="win">+85%</strong></td><td><span class="tag t-ok">正常</span></td></tr>
+      <tr><td>Pepper,_bell___Bacterial_spot</td><td class="num">20</td><td class="num">95%</td><td class="num">100%</td><td class="num">100%</td><td class="num">100%</td><td class="num">+5%</td><td><span class="tag t-ok">正常</span></td></tr>
+      <tr><td>Squash___Powdery_mildew</td><td class="num">20</td><td class="num">70%</td><td class="num">100%</td><td class="num">100%</td><td class="num">100%</td><td class="num">+30%</td><td><span class="tag t-ok">正常</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>收益按诊断层级汇总</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>层级</th><th class="num">类数</th><th>平均 @5 变化</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag t-bad">召回弱</span></td><td class="num">9</td><td>18.9% → 21.7%（<strong>+2.8%</strong>）</td></tr>
+      <tr><td><span class="tag t-amber">排序弱</span></td><td class="num">2</td><td>2.5% → 5.0%（+2.5%）</td></tr>
+      <tr class="hi-row"><td><span class="tag t-ok">正常</span></td><td class="num"><strong>10</strong></td><td>64.5% → 87.0%（<strong class="win">+22.5%</strong>）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout err">
+    <b>核心结论：换 reranker 的收益几乎全部落在「召回了但排不上」的类上；「召不回」的 9 个类几乎没有改善（+2.8pt）。排序手段救不了召回问题。</b>
+  </div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="s4">
+  <h2 class="sec"><span class="num">4</span>番茄专项（7 类 × 20 = 140 样本，全项目最弱作物）</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>描述版本</th><th class="num">@1</th><th class="num">@3</th><th class="num">@5</th><th class="num">@20</th></tr></thead>
+    <tbody>
+      <tr><td>v3 + bge</td><td class="num">1.4%</td><td class="num">7.1%</td><td class="num">12.9%</td><td class="num">32.9%</td></tr>
+      <tr><td>v3 + Qwen3</td><td class="num">5.0%</td><td class="num">15.0%</td><td class="num">25.0%</td><td class="num">32.9%</td></tr>
+      <tr><td>32B + Qwen3</td><td class="num">2.1%</td><td class="num">10.0%</td><td class="num">19.3%</td><td class="num">25.7%</td></tr>
+      <tr><td>v4 + Qwen3</td><td class="num">2.9%</td><td class="num">12.9%</td><td class="num">28.6%</td><td class="num">36.4%</td></tr>
+      <tr class="hi-row"><td><strong>v5 + Qwen3</strong></td><td class="num"><strong>7.1%</strong></td><td class="num"><strong>20.0%</strong></td><td class="num"><strong class="win">37.9%</strong></td><td class="num"><strong>47.1%</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout warn">
+    <b>番茄 7 个类里 6 个属「召回弱」</b>，且 @20 本身就低 —— 排序无法救，指向知识库症状描述与图片的可匹配性。
+  </div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="s5">
+  <h2 class="sec"><span class="num">5</span>描述质量：prompt 迭代（示例与清单被模型照抄）</h2>
+  <p><code>crawler/gen_vl_desc.py</code> 保留了三版 prompt 与其教训注释。下表为番茄 140 样本的统计：</p>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead>
+      <tr><th>版本</th><th class="num">平均字数</th><th class="num">含「多角形」</th><th class="num">含「受叶脉限制」</th><th class="num">含「无明显病症」</th><th class="num">含「未见」</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>v3</td><td class="num">72.7</td><td class="num"><strong class="bad">84.3%</strong></td><td class="num">81.4%</td><td class="num">2.9%</td><td class="num">23.6%</td></tr>
+      <tr><td>v4</td><td class="num">64.5</td><td class="num"><strong class="win">0.0%</strong></td><td class="num">81.4%</td><td class="num">2.1%</td><td class="num">27.1%</td></tr>
+      <tr><td>v5</td><td class="num">56.1</td><td class="num">0.0%</td><td class="num"><strong class="win">0.0%</strong></td><td class="num">1.4%</td><td class="num"><strong>67.9%</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <blockquote>
+    全量 620 条时 v3 的「多角形」占比为 <strong>59.4%</strong>（番茄 76%；番茄斑枯／玉米灰斑／马铃薯早疫／苹果锈病／草莓蛇眼 <strong>5 个类 100%</strong>）——数字见 <code>gen_vl_desc.py</code> 注释。
+  </blockquote>
+
+  <h3>根因不是模型能力，而是提示词写法</h3>
+  <ol>
+    <li><strong>v3 的坑</strong>：判别特征清单写成「是否受叶脉限制（<strong>例如呈多角形</strong>）」，模型把括号里的示例当标准答案照抄。
+      一条特征出现在六成描述里就失去了区分度，<strong>反而把检索精准推向知识库中同样用该措辞的错误病害</strong>——这是番茄类召不回的根因之一。</li>
+    <li><strong>v4 的对策</strong>：删掉括号示例，并允许"形状不明显，不要硬套"。→「多角形」76.2% → <strong>0.0%</strong>；
+      但「受叶脉限制」仍 73.8%（与 v3 持平）→ 说明根因不只是"示例被抄"，<strong>清单式提示本身</strong>就会让模型逐条"填上"。</li>
+    <li><strong>v5 的对策</strong>：整条删掉该清单项，并明确"各项只是提示方向，不要求逐条覆盖"。</li>
+  </ol>
+
+  <div class="callout">
+    <b>效果（番茄 @5）</b>：v3 25.0% → v4 28.6% → <b>v5 37.9%</b>（两版合计 +12.9pt）。
+  </div>
+
+  <div class="callout warn">
+    <p><b>勘误（2026-09-15）</b>：本文件早前版本把 v5 判为"模板塌缩、@5 提升不可信"，<b>该结论错误</b>。</p>
+    <p>错因是拿"含『未见』的比例"当作空洞度的代理指标 —— 而 v5 里的「未见霉层／粉状物／虫体」是<b>合法的阴性判断</b>
+    （有判别力：霜霉病才有霉层），与 v3 那种"照抄示例造成的假阳性"性质完全不同。</p>
+    <p>v5 的 prompt 恰恰<b>禁止</b>写"未见"占位词，模型仍写是出于语义必要，不是在灌水。v5 亦为全版本 @5 最高。</p>
+  </div>
+
+  <div class="callout err">
+    <b>仍待处理</b>：线上 <code>core/vision.py</code> 的 <code>DESCRIBE_PROMPT</code> <b>仍是含「示例输出」的旧版</b>
+    （示例为"圆形黄褐色病斑、边缘有黄色晕圈、直径约 3~5mm"），与 v3 属同一类反模式，<b>尚未切到 v5</b>。
+  </div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section id="s6">
+  <h2 class="sec"><span class="num">6</span>阈值标定依据（换 reranker 的必要伴随项）</h2>
+
+  <h3>6.1 分数尺度</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>reranker</th><th class="num">健康样本 top1 中位</th><th class="num">病害样本 top1 中位</th><th class="num">判别力（差）</th></tr></thead>
+    <tbody>
+      <tr><td>bge-reranker-v2-m3</td><td class="num">0.084</td><td class="num">0.927</td><td class="num">0.843</td></tr>
+      <tr class="hi-row"><td><strong>Qwen3-Reranker-8B</strong></td><td class="num"><strong>0.025</strong></td><td class="num"><strong>0.968</strong></td><td class="num"><strong>0.943</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Qwen3 判别力更强，但对健康的打分分布更分散。</p>
+
+  <h3>6.2 阈值扫描</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>阈值</th><th class="num">bge 误报</th><th class="num">Qwen3 误报</th></tr></thead>
+    <tbody>
+      <tr><td>0.25（旧线上）</td><td class="num">7.0%</td><td class="num"><span class="tag t-bad">27.0%</span></td></tr>
+      <tr><td>0.40</td><td class="num">6.5%</td><td class="num">6.5%</td></tr>
+      <tr class="hi-row"><td><strong>0.50（新线上）</strong></td><td class="num">6.5%</td><td class="num"><strong class="win">6.5%</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout">
+    <b>沿用 0.25 会让误报从 7% 跳到 27%（阈值假象）。取 0.5 后两代持平于 6.5%。</b><br>
+    → <code>DEFAULT_SCORE_THRESHOLD = 0.5</code> 已写入 <code>KnowledgeBase/graph.py</code>，<code>chat.py</code> 引用该常量。
+  </div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section id="s7">
+  <h2 class="sec"><span class="num">7</span>多轮对话端到端（40 例 = 10 作物 × 4 样本，每例最多 5 轮）</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>指标</th><th class="num">旧配置 bge+0.25</th><th class="num">新配置 Qwen3+0.5</th></tr></thead>
+    <tbody>
+      <tr><td>第 1 轮确诊</td><td class="num">25.0%</td><td class="num"><strong class="win">40.0%</strong></td></tr>
+      <tr><td>3 轮内确诊</td><td class="num">70.0%</td><td class="num">65.0%</td></tr>
+      <tr><td>5 轮内确诊</td><td class="num">72.5%</td><td class="num"><strong class="win">75.0%</strong></td></tr>
+      <tr><td>防治方案合格</td><td class="num">60.0%</td><td class="num"><strong class="win">65.0%</strong></td></tr>
+      <tr><td>平均主动追问</td><td class="num">2.38 次</td><td class="num">2.38 次</td></tr>
+      <tr><td>真值泄漏轮次</td><td class="num">0</td><td class="num">0</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>按作物 5 轮内确诊</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>作物</th><th class="num">旧</th><th class="num">新</th></tr></thead>
+    <tbody>
+      <tr><td>马铃薯 / 桃 / 辣椒 / 草莓 / 西葫芦 / 柑橘</td><td class="num">4/4</td><td class="num">4/4</td></tr>
+      <tr><td>番茄</td><td class="num">3/4</td><td class="num">3/4</td></tr>
+      <tr><td>苹果</td><td class="num">2/4</td><td class="num">2/4</td></tr>
+      <tr><td><strong>玉米</strong></td><td class="num"><strong>0/4</strong></td><td class="num"><strong>1/4</strong></td></tr>
+      <tr class="lo-row"><td><strong>葡萄</strong></td><td class="num"><strong>0/4</strong></td><td class="num"><strong>0/4</strong> <span class="bad">（Esca 已剔除，属标注问题）</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <b>首轮确诊 +15pt（25%→40%）是最有价值的改善</b>——用户更少被反复追问。
+  </div>
+</section>
+
+<!-- ============ 8 ============ -->
+<section id="s8">
+  <h2 class="sec"><span class="num">8</span>实验 B：多模态 rerank（n=120，同一候选池）</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>方案</th><th class="num">@1</th><th class="num">@3</th><th class="num">@5</th><th class="num">@20</th></tr></thead>
+    <tbody>
+      <tr><td>基线 bge（现状）</td><td class="num">0.8%</td><td class="num">18.3%</td><td class="num">20.0%</td><td class="num">90.0%</td></tr>
+      <tr class="hi-row"><td><strong>B1 文本 rerank（Qwen3-8B）</strong></td><td class="num">19.2%</td><td class="num">39.2%</td><td class="num"><strong class="win">54.2%</strong></td><td class="num">89.2%</td></tr>
+      <tr><td>B2 多模态 VL-8B（原图）</td><td class="num">15.8%</td><td class="num">37.5%</td><td class="num">49.2%</td><td class="num">88.3%</td></tr>
+      <tr class="hi-row"><td><strong>B2 多模态 VL-32B（原图）</strong></td><td class="num"><strong>25.0%</strong></td><td class="num">37.5%</td><td class="num">51.7%</td><td class="num">89.2%</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>配对 McNemar</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>对比</th><th>K=1</th><th>K=5</th><th>K=20</th></tr></thead>
+    <tbody>
+      <tr><td>基线 vs B1</td><td>23/1 p&lt;0.0001 <span class="tag t-ok">显著</span></td><td>42/1 p&lt;0.0001 <span class="tag t-ok">显著</span></td><td>0/1 p=1.0 <span class="tag t-bad">不显著</span></td></tr>
+      <tr><td>基线 vs B2-32B</td><td>30/1 p&lt;0.0001 <span class="tag t-ok">显著</span></td><td>39/1 p&lt;0.0001 <span class="tag t-ok">显著</span></td><td>0/1 p=1.0 <span class="tag t-bad">不显著</span></td></tr>
+      <tr class="lo-row"><td><strong>B1 vs B2-32B</strong></td><td>10/3 p=0.0923 <span class="tag t-bad">不显著</span></td><td>9/12 p=0.6636 <span class="tag t-bad">不显著</span></td><td>0/0 p=1.0 <span class="tag t-bad">不显著</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <b>结论：图像参与排序有效（@5 +32pt），但没有超过直接换更强的文本 reranker（B1 vs B2 全 K 不显著）。@20 四者相同，全为池内重排。</b>
+  </div>
+
+  <h3>附：VL-Reranker 接口探测（重要负面结果）</h3>
+  <p>平台的 <code>/rerank</code> 接口<strong>只接受字符串</strong>：</p>
+  <ul>
+    <li>传图文内容数组 → <code>400 Input should be a valid string</code></li>
+    <li>穷举 9 种图片传参写法（<code>query_image</code> / <code>images</code> / <code>image_url</code> / <code>query=dataurl</code> …）→ <strong><code>image_tokens</code> 全部 = 0</strong>，图片被静默忽略</li>
+    <li>分数尺度佐证：同一组输入，<code>VL-Reranker</code> 给出 <code>[0.0270, 0.0269, 0.0149]</code>（几乎无区分度），而 bge 为 <code>[0.7103, 0.3705, 0.1205]</code></li>
+  </ul>
+  <p>→ 「用 VL-Reranker 做图文交叉打分」在该平台不可行，故改用多模态 LLM 做 listwise 重排（即 B2）。</p>
+</section>
+
+<!-- ============ 9 ============ -->
+<section id="s9">
+  <h2 class="sec"><span class="num">9</span>数据质量处置：Grape___Esca 剔除</h2>
+  <p><code>Grape___Esca_(Black_Measles)</code> 曾是 <code>medium</code> 置信度的近似映射（→ 葡萄轮斑病）。人工核对全部 20 张图后确认<strong>症状三项全不符</strong>：</p>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>判别点</th><th>图（Esca 虎纹状叶症）</th><th>葡萄轮斑病</th></tr></thead>
+    <tbody>
+      <tr><td>形状</td><td>不规则块状、<strong>受叶脉限制</strong></td><td><strong>圆形</strong>，直径约 2cm</td></tr>
+      <tr><td>环纹</td><td>无</td><td><strong>有深浅同心环纹</strong></td></tr>
+      <tr><td>霉层</td><td>无</td><td>反面<strong>有浅褐色霉层</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>根因</strong>：PlantVillage 葡萄只有 3 类，而知识库有 49 种葡萄病害 —— <strong>Esca 在 KB 中无对应条目</strong>，只能勉强挑一个最像的。</p>
+  <p><strong>处置</strong>：<code>agri_eval_map.py</code> 中改为 <code>NO_MATCH</code>；<code>eval_agri_recall.py</code> 的 <code>load_samples()</code> 增加过滤并打印剔除数。<br>
+  <strong>影响</strong>：该坏标注系统性压低指标（尤其旧模型 @20 由 67.9% 拖到 66.6%），剔除后评测口径才干净。</p>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="s10">
+  <h2 class="sec"><span class="num">10</span>数据文件清单（<code>crawler/data/</code>）</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th style="width:42%">文件</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td><code>baseline_v3_bge.jsonl</code></td><td>620 样本 × bge-reranker（旧线上基线）</td></tr>
+      <tr><td><code>baseline_v3_qwen3rerank.jsonl</code></td><td>620 样本 × Qwen3-Reranker（<strong>当前线上基线</strong>）</td></tr>
+      <tr><td><code>expC_32bdesc_qwen3rerank.jsonl</code></td><td>32B 描述版本</td></tr>
+      <tr><td><code>expC_v4full_qwen3rerank.jsonl</code></td><td>v4 描述版本</td></tr>
+      <tr><td><code>expC_v5_qwen3rerank.jsonl</code></td><td>v5 描述版本（@5 最高，但健康误报 17.0%）</td></tr>
+      <tr><td><code>multiturn_40.jsonl</code></td><td>多轮对话 40 例（旧配置，含 agent 回复与 sim 用户回复）</td></tr>
+      <tr><td><code>multiturn_40_baseline_bge.jsonl</code></td><td>多轮 40 例（旧配置完整记录）</td></tr>
+      <tr><td><code>multiturn_40_qwen3rerank.jsonl</code></td><td>多轮 40 例（新配置）</td></tr>
+      <tr><td><code>expB_paired.jsonl</code></td><td>实验B n=440：bge 排序 / 文本 rerank 排序（仅 top5）</td></tr>
+      <tr><td><code>expB_qwen3rerank.jsonl</code></td><td>实验B 全量：文本 rerank 完整排序（n=1280）</td></tr>
+      <tr><td><code>expB2_vlrerank.jsonl</code></td><td>实验B 多模态 VL-8B（n=120）</td></tr>
+      <tr><td><code>expB2_vlrerank_32b.jsonl</code></td><td>实验B 多模态 VL-32B（n=120）</td></tr>
+      <tr><td><code>vl_desc_Qwen_Qwen3-VL-8B-Instruct_v3/v4/v5.jsonl</code></td><td>描述缓存（三版 prompt）</td></tr>
+      <tr><td><code>grape_esca_20_contact_sheet.png</code></td><td>Esca 20 图人工核对对照图</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ 11 ============ -->
+<section id="s11">
+  <h2 class="sec"><span class="num">11</span>待办 / 已知问题</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th class="num" style="width:8%">优先级</th><th style="width:30%">问题</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr class="lo-row">
+        <td class="num"><span class="tag t-bad">1</span></td>
+        <td><strong>线上 VL prompt 未切到 v5</strong></td>
+        <td><code>core/vision.py</code> 的 <code>DESCRIBE_PROMPT</code> 仍含「示例输出」（与 v3 同款反模式）。离线已验证 v5 使番茄 @5 25.0%→37.9%，<strong>这是当前投入产出比最高的一处改动</strong></td>
+      </tr>
+      <tr><td class="num">2</td><td><strong>番茄 6/7 类召回弱</strong></td><td>@20 本身低，须改知识库症状描述或描述对齐，排序手段无效</td></tr>
+      <tr><td class="num">3</td><td>柑橘黄龙病 @20 = 40%</td><td>同上，召回问题</td></tr>
+      <tr><td class="num">4</td><td>玉米锈病 / 大斑病 @20 = 60%</td><td>同上</td></tr>
+      <tr><td class="num">5</td><td>玉米灰斑病多轮 0/4（新配置 1/4）</td><td><strong>检索 @5=@20=100%</strong>，失败在 agent 推理：VL 描述「有淡黄晕圈」与 KB「无明显边缘」冲突，agent 据此排除了正确答案</td></tr>
+      <tr><td class="num">6</td><td>Peach___Bacterial_spot 回退 −25pt</td><td>换 reranker 唯一的明显回退</td></tr>
+      <tr><td class="num">7</td><td>苹果 Cedar_apple_rust / Black_rot 仍排序弱</td><td>@20 80~85% 但 @5 仅 5%，纯排序瓶颈</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer class="doc">
+  农业病虫害识别 Agent（项目2）· 实测数据留档<br>
+  生成日期 2026-09-15 ｜ 本页由 <code>PROJECT2_RESULTS.md</code> 转换，可用浏览器「打印 → 另存为 PDF」导出
+</footer>
+
+</div>
+</body>
+</html>
