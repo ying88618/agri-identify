@@ -5,8 +5,15 @@ eval_multiturn.py — 多轮对话端到端评测(40 样本 = 10 作物 × 前 4
 指标:
   ① 3 轮内确诊成功率
   ② 5 轮内确诊成功率
-  ③ 5 轮内给出防治方案成功率
+  ③ 给出可执行防治方案成功率
   ④ 单轮基线(第 1 轮确诊), 用于对比多轮增益
+
+【③ 的口径在 2026-10-04 变过】旧口径只判**最后一轮**的回复，而本脚本强制跑满
+MAX_TURNS 轮 —— agent 在第 3~4 轮给了方案、第 5 轮改成回答农民追问时，那份方案
+就被判丢了。实测旧基线 40 条里 25 次方案失败，其中 12 次属于这种盲区
+（见 crawler/_check_solution_sections.py --plans），即 37.5% 只是下界而非真实值。
+现在 solution_ok = "任意一轮给过"，并保留 solution_last_only 记录旧口径 ——
+与 history 里的 multiturn_40_*.jsonl 对比 ③ 时只能用后者。
 
 协议(与 v3 一致):
   用户初始给图片描述+提问; 之后 agent 追问 -> 用户按 KB 症状回答;
@@ -77,6 +84,8 @@ milvus.load_collection(COLLECTION)
 # 日志文件。评测要跑 30 分钟，最容易被忘掉的就是 `> log 2>&1`；而事后想确认
 # "这次是不是撞了 rerank 限流降级"，唯一证据在 core/retriever._rerank 的 warning 里
 # （它自己注明降级会让指标失真 15%~63%）。所以让日志默认就有，不靠命令行记得加。
+logger = logging.getLogger("eval_multiturn")
+
 LOG_PATH = os.path.join(DATA, f"eval_run_{time.strftime('%Y%m%d_%H%M%S')}.log")
 
 
@@ -240,6 +249,13 @@ META = {
     "config": _config_fingerprint(),
     "code": _git_info(),
     "runtime": {"max_turns": MAX_TURNS, "conc": CONC, "per_crop": PER_CROP},
+    # 指标口径写进元数据。2026-10-04 把 solution_ok 从"最后一轮"改成"任意一轮"，
+    # 不写下来的话，将来对比时会拿两个不同口径的数字互相印证。
+    "metrics": {
+        "first_hit": "首次给出正确诊断的轮次, 0 = 从未; 判定看全部轮次",
+        "solution_ok": "任意一轮给出针对真值病害的可执行防治方案（2026-10-04 起）",
+        "solution_last_only": "仅看最后一轮（旧口径），用于与该日期之前的基线对比",
+    },
 }
 
 
@@ -279,14 +295,33 @@ J_DIAG = """下面是一段「助手与农民」的多轮对话。真实病害�
 
 只输出一个数字，不要解释。"""
 
+# 两个问题一次问完，输出两位数字；不拆成两次调用是为了不多花一轮 judge 成本。
+#
+# 【为什么加问 ①】旧版只看**最后一轮**，但本脚本强制跑满 MAX_TURNS 轮 ——
+# agent 在第 3~4 轮给了方案、第 5 轮改成回答农民追问时，那份方案就被判丢了。
+# 实测旧基线 40 条里 25 次方案失败，其中 12 次属于这种盲区。
+#
+# 【为什么保留 ②】旧口径要留着：history 里 multiturn_40_*.jsonl 的 solution_ok
+# 全是"只看最后一轮"，不留一份同口径的数字就无法与它们对齐。
 J_SOLU = """下面是一段「助手与农民」的多轮对话。真实病害是：{truth}
 
-请只看**最后一轮**助手的回复，判断它是否给出了针对该病害的**可执行防治方案**。
-合格的方案应包含具体措施，例如：农业防治（清园/轮作/控湿等）、化学防治（具体药剂名或药剂类型、稀释倍数、喷药时机/频次）等。
-只要泛泛而谈"注意通风、加强管理"、或没有给出任何可执行的措施，算不合格；
-如果最后一轮给的方案是针对**错误病害**的，也算不合格。
+请回答两个问题。合格的防治方案应包含具体措施，例如农业防治（清园/轮作/控湿等）、
+化学防治（具体药剂名或药剂类型、稀释倍数、喷药时机/频次）等；
+只要泛泛而谈"注意通风、加强管理"、或没有给出任何可执行措施，即算不合格；
+针对**错误病害**给出的方案也算不合格。
 
-只输出 1（合格）或 0（不合格），不要解释。"""
+① 助手在**任意一轮**中，是否给出过针对 {truth} 的可执行防治方案？
+② **最后一轮**的回复，本身是否就是一个针对 {truth} 的可执行防治方案？
+
+只输出两个数字，用空格分隔，顺序为 ①②。例如 "1 0" 表示任意一轮给过、但最后一轮没给。
+不要解释。"""
+
+# 每轮截断 1500 字，与旧版对"最后一轮"的截断长度一致 ——
+# 这样 solution_last_only 与旧数字同口径，可以直接对齐历史基线。
+# 刻意不复用 JUDGE_TXT（那边是 600）：改它会让 J_DIAG 的输入一起变、进而动到确诊率，
+# 那是另一个指标，不该被这次改动连带影响。
+J_SOLU_TXT = lambda turns: "\n".join(
+    f"第{t['turn']}轮 助手：{(t.get('agent') or '')[:1500]}" for t in turns)
 
 JUDGE_TXT = lambda turns: "\n".join(
     f"第{t['turn']}轮 助手：{(t.get('agent') or '')[:600]}" for t in turns)
@@ -353,13 +388,20 @@ async def run_one(i, s):
     d = await _ask(J_DIAG.format(truth=s["truth"]) + "\n\n" + txt)
     digits = "".join(ch for ch in d if ch.isdigit())
     first_hit = int(digits[:1]) if digits else 0
-    last = (turns[-1].get("agent") or "")[:1500]
-    sv = await _ask(J_SOLU.format(truth=s["truth"]) + "\n\n" + f"最后一轮 助手：{last}")
+    sv = await _ask(J_SOLU.format(truth=s["truth"]) + "\n\n" + J_SOLU_TXT(turns))
+    sdigits = "".join(ch for ch in sv if ch.isdigit())
+    if len(sdigits) < 2:
+        # 少一位就意味着 ② 会被判成 0，静默拉低旧口径指标；
+        # 宁可留痕，也不要让一次返回格式异常变成看不出来的数字变化。
+        logger.warning("J_SOLU 未返回两位数字: %r (truth=%s)", sv, s["truth"])
     return {"crop": s["crop"], "truth": s["truth"],
             "group": s.get("group", "baseline"),   # 基线 / 反馈集，用于分组报数
             "kb_len": len(kb),
             "turns": turns, "first_hit": first_hit, "n_asked": n_asked,
-            "solution_ok": sv.startswith("1"),
+            # 口径变更（2026-10-04）：solution_ok 现在是"任意一轮给过"，
+            # 不再是"最后一轮给过"。与历史文件对比请用 solution_last_only。
+            "solution_ok": sdigits[:1] == "1",
+            "solution_last_only": sdigits[1:2] == "1",
             "leak": sum(1 for t in turns if "来源:" in t["agent"])}
 
 
@@ -396,8 +438,11 @@ async def _run():
               f"  = {sum(1 for r in rs if 0 < r['first_hit'] <= 3)/m:.1%}")
         print(f"  ② 5 轮内确诊      : {sum(1 for r in rs if r['first_hit'])}/{m}"
               f"  = {sum(1 for r in rs if r['first_hit'])/m:.1%}")
-        print(f"  ③ 5 轮内给出防治方案: {sum(1 for r in rs if r['solution_ok'])}/{m}"
-              f"  = {sum(1 for r in rs if r['solution_ok'])/m:.1%}")
+        n_any = sum(1 for r in rs if r["solution_ok"])
+        n_last = sum(1 for r in rs if r.get("solution_last_only"))
+        print(f"  ③ 给出防治方案(任意一轮): {n_any}/{m} = {n_any/m:.1%}")
+        print(f"      └ 仅看最后一轮(旧口径): {n_last}/{m} = {n_last/m:.1%}"
+              f"   两者之差 = 判定盲区 {n_any - n_last} 条")
         print(f"  ④ 单轮基线(第1轮确诊): {sum(1 for r in rs if r['first_hit']==1)}/{m}"
               f"  = {sum(1 for r in rs if r['first_hit']==1)/m:.1%}")
         print(f"     追问率 {sum(1 for r in rs if r['n_asked']>0)/m:.1%}"
@@ -435,6 +480,7 @@ def _summarize(res):
             "hit3": sum(1 for r in rs if 0 < r["first_hit"] <= 3),
             "hit5": sum(1 for r in rs if r["first_hit"]),
             "solution_ok": sum(1 for r in rs if r["solution_ok"]),
+            "solution_last_only": sum(1 for r in rs if r.get("solution_last_only")),
             "hit1": sum(1 for r in rs if r["first_hit"] == 1),
             "asked": sum(1 for r in rs if r["n_asked"] > 0),
             "leak": sum(r["leak"] for r in rs),
@@ -485,4 +531,7 @@ async def main():
         _finalize(log_f, handler, t0)
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    # 这层守卫是为了让本模块能被 import（例如单独调 J_SOLU 验证判定输出格式、
+    # 或写单测覆盖这里的解析逻辑）；否则一 import 就会跑满整个评测。
+    asyncio.run(main())

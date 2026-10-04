@@ -1,6 +1,6 @@
 {
-  "started_at": "2026-10-04T13:16:23",
-  "log": "eval_run_20261004_131623.log",
+  "started_at": "2026-10-04T15:47:31",
+  "log": "eval_run_20261004_154731.log",
   "out": "multiturn_40_baseline.jsonl",
   "n_samples": 40,
   "groups": {
@@ -36,7 +36,7 @@
     "system_prompt_sha1": "c0114ada2619"
   },
   "code": {
-    "commit": "7f4d305",
+    "commit": "889e579",
     "dirty": true
   },
   "runtime": {
@@ -44,31 +44,45 @@
     "conc": 3,
     "per_crop": 4
   },
+  "metrics": {
+    "first_hit": "首次给出正确诊断的轮次, 0 = 从未; 判定看全部轮次",
+    "solution_ok": "任意一轮给出针对真值病害的可执行防治方案（2026-10-04 起）",
+    "solution_last_only": "仅看最后一轮（旧口径），用于与该日期之前的基线对比"
+  },
   "results": {
     "total": 40,
-    "ok": 40,
-    "errors": [],
+    "ok": 39,
+    "errors": [
+      {
+        "crop": "柑橘",
+        "truth": "柑橘黄龙病",
+        "group": "baseline",
+        "err": "ConnectionError(ProtocolError('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')))"
+      }
+    ],
     "all": {
-      "n": 40,
-      "hit3": 27,
-      "hit5": 30,
-      "solution_ok": 15,
-      "hit1": 12,
-      "asked": 35,
+      "n": 39,
+      "hit3": 28,
+      "hit5": 32,
+      "solution_ok": 34,
+      "solution_last_only": 21,
+      "hit1": 13,
+      "asked": 37,
       "leak": 0
     },
     "by_group": {
       "baseline": {
-        "n": 40,
-        "hit3": 27,
-        "hit5": 30,
-        "solution_ok": 15,
-        "hit1": 12,
-        "asked": 35,
+        "n": 39,
+        "hit3": 28,
+        "hit5": 32,
+        "solution_ok": 34,
+        "solution_last_only": 21,
+        "hit1": 13,
+        "asked": 37,
         "leak": 0
       }
     }
   },
-  "finished_at": "2026-10-04T13:58:46",
-  "duration_sec": 2542.4
+  "finished_at": "2026-10-04T16:08:24",
+  "duration_sec": 1252.7
 }
