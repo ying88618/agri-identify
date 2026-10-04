@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import os
+import time
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -20,7 +21,18 @@ _client = AsyncOpenAI(
     base_url=os.getenv("OPENAI_BASE_URL"),
 )
 VL_MODEL = os.getenv("VL_MODEL_NAME", "").strip()
-DESCRIBE_TIMEOUT = 30
+
+# 单次图片理解的硬超时。
+#
+# 【为什么从 30 提到 60】实测同一张图 + 同一 v5 prompt 的端到端延迟：
+#     Qwen3-Omni-30B-A3B-Captioner   1.5s
+#     Qwen3-VL-30B-A3B-Instruct      4.6s   <- 现用
+#     Qwen3-VL-32B-Instruct         15.8s
+#     Qwen3-VL-8B-Instruct          90.7s   <- 旧配置, 必然撞上 30s 超时
+# 旧的 8B 配置下每次调用都超时, describe_image 恒返回空串, 于是"图片描述"这一环
+# 从未真正进入对话(表现为模型抱怨没收到图片描述), 且空串不进缓存 —— 静默且不可见。
+# 换 30B-A3B 后 4.6s, 60s 有充分余量。
+DESCRIBE_TIMEOUT = 60
 
 DESCRIBE_PROMPT = """你是一名农业植保专家。请看这张照片，用中文客观描述你在图上【实际看到】的症状特征，供后续检索病害资料。
 
@@ -48,6 +60,7 @@ async def describe_image(image_url: str, question: str = "", max_len: int = 300)
     if not image_url or not VL_MODEL:
         logger.info("describe_image skipped (image_url=%s vl_model=%s)", bool(image_url), VL_MODEL)
         return ""
+    t0 = time.monotonic()
     try:
         text_part = DESCRIBE_PROMPT
         if question:
@@ -76,5 +89,10 @@ async def describe_image(image_url: str, question: str = "", max_len: int = 300)
                     len(text), DESCRIBE_PROMPT_VERSION)
         return text
     except Exception as e:
-        logger.warning("describe_image failed: %s", e)
+        # 必须带上 type(e).__name__：TimeoutError 的 str() 是空串，只打 e 的话
+        # 日志里只会剩一句 "describe_image failed: "，排查时完全看不出是超时
+        # （这个坑真实发生过：图片描述恒为空、空串又不进缓存，整条多模态链路
+        #   静默失效了很久）。写法与 core/retriever.py 的 _rerank 保持一致。
+        logger.warning("describe_image failed after %.1fs: %s: %s",
+                       time.monotonic() - t0, type(e).__name__, e)
         return ""

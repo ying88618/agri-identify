@@ -55,3 +55,18 @@ CREATE TABLE IF NOT EXISTS agri_agent.users (
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_0900_ai_ci;
 */
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id              INT          NOT NULL AUTO_INCREMENT,
+  user_id         INT          NOT NULL,
+  session_id      VARCHAR(64)  NOT NULL,
+  disease         VARCHAR(64)  NOT NULL,
+  verdict         VARCHAR(16)  NOT NULL,
+  correct_disease VARCHAR(64)  NULL,
+  comment         VARCHAR(500) NULL,
+  snapshot        JSON         NULL,
+  created_at      DATETIME     NOT NULL,
+  PRIMARY KEY (id),
+  KEY ix_feedback_user (user_id),
+  KEY ix_feedback_session (session_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

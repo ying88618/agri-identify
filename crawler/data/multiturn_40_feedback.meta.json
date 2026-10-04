@@ -1,0 +1,74 @@
+{
+  "started_at": "2026-10-04T12:46:21",
+  "log": "eval_run_20261004_124621.log",
+  "out": "multiturn_40_feedback.jsonl",
+  "n_samples": 1,
+  "groups": {
+    "feedback": 1
+  },
+  "sources": [
+    {
+      "group": "baseline",
+      "file": "vl_desc_Qwen_Qwen3-VL-8B-Instruct_v3.jsonl",
+      "per_crop": 4,
+      "rows": 640,
+      "missing_crop_or_truth": 0,
+      "sha1": "1dbbbb929f1f"
+    },
+    {
+      "group": "feedback",
+      "file": "vl_desc_feedback.jsonl",
+      "per_crop": null,
+      "rows": 1,
+      "missing_crop_or_truth": 0,
+      "sha1": "079de19ba041"
+    }
+  ],
+  "config": {
+    "MODEL_NAME": "deepseek-ai/DeepSeek-V4-Flash",
+    "RERANK_MODEL": "Qwen/Qwen3-Reranker-8B",
+    "EMBEDDING_MODEL": "BAAI/bge-m3",
+    "score_threshold": 0.5,
+    "recall_k": 100,
+    "top_k": 6,
+    "bm25_filter_pool": 20,
+    "describe_prompt_version": 5,
+    "system_prompt_sha1": "c0114ada2619"
+  },
+  "code": {
+    "commit": "7f4d305",
+    "dirty": true
+  },
+  "runtime": {
+    "max_turns": 5,
+    "conc": 3,
+    "per_crop": 4
+  },
+  "results": {
+    "total": 1,
+    "ok": 1,
+    "errors": [],
+    "all": {
+      "n": 1,
+      "hit3": 1,
+      "hit5": 1,
+      "solution_ok": 1,
+      "hit1": 0,
+      "asked": 1,
+      "leak": 0
+    },
+    "by_group": {
+      "feedback": {
+        "n": 1,
+        "hit3": 1,
+        "hit5": 1,
+        "solution_ok": 1,
+        "hit1": 0,
+        "asked": 1,
+        "leak": 0
+      }
+    }
+  },
+  "finished_at": "2026-10-04T12:48:27",
+  "duration_sec": 126.2
+}

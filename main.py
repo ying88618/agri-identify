@@ -2,7 +2,7 @@
 
 本地启动:
     uvicorn main:app --reload
-    uvicorn main:app --host 0.0.0.0 --port 8000
+    uvicorn main:app --host 0.0.0.0 --port 8001
 """
 from contextlib import asynccontextmanager
 
@@ -10,6 +10,8 @@ from fastapi import FastAPI
 
 from api.auth import router as auth_router
 from api.chat import router as chat_router
+from api.diagnose import router as diagnose_router
+from api.feedback import router as feedback_router
 from api.files import router as files_router
 from api.kb import router as kb_router
 from api.models import init_db
@@ -28,10 +30,12 @@ app.include_router(chat_router, tags=["chat"])
 app.include_router(auth_router, tags=["auth"])
 app.include_router(files_router, tags=["files"])
 app.include_router(kb_router, tags=["kb"])
+app.include_router(diagnose_router, tags=["diagnose"])
+app.include_router(feedback_router, tags=["feedback"])
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
 
 #uvicorn main:app --reload

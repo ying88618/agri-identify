@@ -35,11 +35,19 @@ crawler/data/*.png
 crawler/data/*.json
 crawler/data/archive_small/
 
-# 例外：保留「复现入库语料」与「README 所引用指标」对应的最小文件集
+# 例外：保留「复现入库语料」
 !crawler/data/agri_pests.jsonl
-!crawler/data/multiturn_40.jsonl
-!crawler/data/multiturn_40_baseline_bge.jsonl
-!crawler/data/multiturn_40_qwen3rerank.jsonl
+
+# 例外：multiturn_40* 全部入库 —— 它们是最小的评测事实记录（结果 + 元数据），
+# 只在复现指标时用得到。用批量规则而不是逐个列出，是为了让 --group / 换配置
+# 产生的新变体自动入库，不必每次回来改这一行。
+# 其中的 .meta.json 记录了跑它时的模型/阈值/prompt 哈希/样本 sha1/commit，
+# 没有它就只剩指标数字、无法归因（见 crawler/eval_multiturn.py 的 META 注释）。
+!crawler/data/multiturn_40*
+
+# 评测运行日志：每次不同、可由脚本重新生成，属产物而非源码。
+# 关键结论已进 .meta.json，日志只在排查限流降级时用。
+crawler/data/*.log
 
 # 实验运行日志(每次跑都覆盖, 属产物而非源码)
 judge_out.txt
