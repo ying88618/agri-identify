@@ -1,0 +1,46 @@
+# 构建上下文排除清单。
+# 作用有两个：① 别把密钥打进镜像层（镜像层只读，rm 镜像前一直能被 docker history 扒出来）
+#            ② 别把几十 MB 的评测产物传进 build context（每次 build 都要传一遍，极慢）
+
+# ---------- 密钥（最高优先级）----------
+.env
+.env.local
+.env.*.local
+# 只放键名的模板可以进去，它不含密钥
+!.env.example
+
+# ---------- 版本库与 IDE ----------
+.git
+.gitignore
+.idea/
+.vscode/
+.codebuddy/
+
+# ---------- 本地运行产物 ----------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+uploads/
+
+# ---------- 数据集与评测产物 ----------
+# 与 .gitignore 同一套规则：crawler/data 约 30MB，绝大多数可由脚本重新生成。
+# 注意下面的 ! 例外必须在排除规则**之后**，否则不生效。
+crawler/data/*.jsonl
+crawler/data/*.txt
+crawler/data/*.png
+crawler/data/*.log
+crawler/data/*.xlsx
+crawler/data/archive_small/
+backups/
+
+# 例外：容器内要跑 crawler/bulk_ingest_agri.py 灌库，这份语料必须进镜像
+!crawler/data/agri_pests.jsonl
+
+# ---------- 文档与测试 ----------
+# 运行时不依赖；需要跑测试请用本地环境，不要在镜像里跑
+*.md
+tests/

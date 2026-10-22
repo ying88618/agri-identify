@@ -19,7 +19,10 @@ services:
     ports:
       # 宿主机 6379 已被占用（现有容器 myredis），故对外映射到 6380
       # 对应 .env: REDIS_URL=redis://localhost:6380/0
-      - "6380:6379"
+      # 【必须绑定 127.0.0.1】Redis 没密码。写成 "6380:6379" 等于把无认证的 Redis
+      # 发布到 0.0.0.0，放到公网上几小时内就会被扫到并挖矿。绑定 loopback 后
+      # 本机开发照常可用，公网无法访问（服务名通信也不受影响，容器间走内网）。
+      - "127.0.0.1:6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -76,15 +79,114 @@ services:
     volumes:
       - milvus_data:/var/lib/milvus           
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      # 同上：Milvus 无认证。19530 是 gRPC 数据面，9091 是 metrics/健康端口，
+      # 发布到 0.0.0.0 等于对外开放一个可读写的向量库。绑定 loopback 只留本机。
+      - "127.0.0.1:19530:19530"
+      - "127.0.0.1:9091:9091"
     depends_on:
       - etcd
       - minio
     restart: unless-stopped
+
+  # ================================================================
+  # 以下三个服务只在「容器部署」时启用，用 profiles 隔离：
+  #   本机开发：docker compose up -d
+  #             → 只起 redis / etcd / minio / milvus 四个基础设施，
+  #               app 仍用 uvicorn 跑、MySQL 仍用本机 3306，原有流程完全不变
+  #   部署上线：docker compose --profile deploy up -d --build
+  #             → mysql + app + nginx 一并启动
+  # 之所以不放进默认 profile：本机 3306 上已有 MySQL 8 在跑，无 profile 隔离会端口冲突。
+  # ================================================================
+
+  mysql:
+    image: mysql:8.0
+    container_name: agri-mysql
+    profiles: ["deploy"]
+    environment:
+      # :? 语法 = 变量未设置时直接报错退出，避免带着空密码起库
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: agri_agent
+      MYSQL_USER: agri
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 中设置 MYSQL_PASSWORD}
+    # 与 init_db.sql 里的 utf8mb4 / utf8mb4_0900_ai_ci 对齐
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_0900_ai_ci"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # $$ 是给 compose 转义用的，容器内看到的是 $MYSQL_ROOT_PASSWORD
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      # 首次启动要初始化数据目录，给足 40s；否则 app 会因 unhealthy 卡住不启动
+      start_period: 40s
+    restart: unless-stopped
+    # 刻意不映射宿主端口：只有 compose 网络内的 app 能连，公网无法访问 3306
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agri-app
+    profiles: ["deploy"]
+    env_file:
+      - .env
+    environment:
+      # .env 里的地址是给本机开发用的（localhost / 127.0.0.1，指宿主机）；
+      # 容器里的 localhost 是容器自己，必须换成服务名。environment 优先级
+      # 高于 env_file，所以 .env 不需要为部署单存一份。
+      MILVUS_URI: http://milvus:19530
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: mysql+pymysql://agri:${MYSQL_PASSWORD}@mysql:3306/agri_agent?charset=utf8mb4
+      TZ: Asia/Shanghai
+    volumes:
+      # 上传图片必须落在宿主目录。否则重建容器后图没了，而 Redis 里的 image_id
+      # 可能还在，前端拿到的是"图片不存在或不属于当前用户"，排查方向完全跑偏。
+      - ./uploads:/app/uploads
+    expose:
+      - "8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        # Milvus 在 compose 里没有 healthcheck（冷启动要几十秒），只能等"已启动"。
+        # 代价是 app 可能先于 Milvus 就绪，首个请求偶发 500，重试即可。
+        condition: service_started
+    healthcheck:
+      # 用 python 自带的 urllib，镜像里不必额外装 curl
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: agri-nginx
+    profiles: ["deploy"]
+    ports:
+      - "80:80"
+    volumes:
+      # 只覆盖 conf.d/default.conf，主配置沿用镜像自带
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    environment:
+      TZ: Asia/Shanghai
+    restart: unless-stopped
+    # 没给 nginx 配 healthcheck 是刻意的：唯一的探活地址是 /healthz，
+    # 而它会被反代到 app —— app 一抖 nginx 就被标记 unhealthy，探针反而误导。
+    # 若要探 nginx 自身，应加 location = /nginx-health { return 200; } 再单独探。
 
 volumes:                                    
   etcd_data:
   minio_data:
   milvus_data:
   redis_data:
+  # 用户表与反馈表。丢了等于用户全部注销、badcase 反馈全没了
+  mysql_data:

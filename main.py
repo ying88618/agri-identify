@@ -25,6 +25,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Agri Pest Diagnostic Agent", version="0.1.0", lifespan=lifespan)
 
+
+@app.get("/healthz", include_in_schema=False)
+def healthz() -> dict[str, bool]:
+    """容器存活探针。
+
+    刻意只返回常量，不检查 Milvus / MySQL / Redis：
+    依赖抖一下就重启应用，会把可恢复的抖动放大成连环重启（Milvus 冷启动本身就要几十秒）。
+    若将来需要"就绪"判断，应另开 /readyz 交给负载均衡摘节点，而不是写进 restart 策略。
+    """
+    return {"ok": True}
+
+
 # 各 router 自带完整路径（如 /chat/stream、/auth/login），不额外加前缀
 app.include_router(chat_router, tags=["chat"])
 app.include_router(auth_router, tags=["auth"])
