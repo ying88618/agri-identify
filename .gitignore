@@ -59,3 +59,7 @@ backups/
 uploads/
 
 关机.bat
+
+# ---------- 运行时 trace ----------
+# 每次请求都会产生，属产物而非源码；结构见 core/trace.py
+traces/

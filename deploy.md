@@ -403,6 +403,108 @@ tar -cf - --exclude=.git --exclude=uploads --exclude=__pycache__ . | tar -xf - -
 
 ---
 
+### 7.6 案例 E：上游镜像下架，本地能跑云端拉不到 【实测】
+
+**现象**
+
+```
+Error response from daemon: pull access denied for minio/minio,
+repository does not exist or may require 'docker login'
+Error response from daemon: No such image: mysql:8.0
+Error response from daemon: No such image: nginx:alpine
+```
+
+后面那串 `No such image` 是**连带**：`up` 在 minio 这一步失败退出，其他还在拉取的镜像被打断。
+
+**根因**：MinIO 调整了分发策略，Docker Hub 的 `minio/minio` 已下架；
+`quay.io/minio/minio` 仍在但要认证（`401 UNAUTHORIZED`）。
+本地之所以一直能跑，是因为**镜像早在两个月前就缓存了**，与 registry 是否可访问无关。
+
+**修法**：改用 `bitnamilegacy/minio:latest`，并且**不修改主 compose**，而是写一个叠加文件
+`deploy/compose.codespace.yml`（见第 12 节）。不改主文件的原因很具体：
+本地 `knowledge_minio_data` 卷里存着 2940 条文档的对象数据，换镜像/换挂载路径会让本地
+Milvus 挂到不匹配的布局上，现象就是"collection 全没了"。
+
+三处必须适配（Bitnami 与官方镜像行为不同）：
+
+| 差异 | 处理 |
+|---|---|
+| 默认以非 root(1001) 运行，写不进 root 属主的 `/minio_data` | `user: root` |
+| entrypoint 是 Bitnami 自己的脚本，会改写参数 | `entrypoint: ["minio"]` 直接调二进制 |
+| 凭据变量名是 `MINIO_ROOT_USER/PASSWORD` | 显式设 `minioadmin/minioadmin`，与 Milvus 内置配置对齐 |
+
+**教训**：容器化保证的是"环境一致"，**不保证"镜像可获取"**。镜像来源本身也是部署依赖。
+对策：固定 digest（compose 里 redis 已经是 `redis@sha256:...` 形式）、维护私有 registry、
+或准备离线镜像包（`docker save` / `docker load`）。
+
+### 7.7 案例 F：所有健康检查都通过，但容器之间不通 【实测】
+
+**现象**
+
+7 个容器全部 `Up`，`mysql` / `redis` 显示 `(healthy)`，但：
+
+```
+sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError)
+(2003, "Can't connect to MySQL server on 'mysql' (timed out)")
+ERROR:    Application startup failed. Exiting.
+```
+
+`app` 每 ~16 秒重启一次，`milvus` 每 ~11 秒重启一次（它同样要连 `etcd:2379` 和 `minio:9000`）。
+
+**排查路径**
+
+1. `docker events` 里只有 `die` + `start`，**没有 `kill` / `stop`** → 进程是自己退出的（启动失败），
+   不是被 Docker 停掉
+2. 用同网络的一次性容器探针（复用应用镜像，排除业务代码）：
+
+```bash
+docker run --rm --network knowledge_default knowledge-app python -c "
+import socket
+for h, p in [('mysql',3306), ('redis',6379), ('minio',9000), ('milvus',19530)]:
+    try:
+        socket.create_connection((h, p), 3).close(); print(f'{h}:{p}  OK')
+    except Exception as e:
+        print(f'{h}:{p}  FAIL  {type(e).__name__}')
+"
+```
+
+四个端口**全部 `TimeoutError`**，而各容器自己的 healthcheck（走 `127.0.0.1`）全部通过
+→ 卡在**跨容器转发**，不是 DNS、不是端口、更不是内存（`OOMKilled=false`）。
+
+3. 查转发规则，找到根因：
+
+```
+$ sudo iptables -S FORWARD
+-P FORWARD ACCEPT              ← nft 表看着没问题
+$ sudo iptables-legacy -S FORWARD
+-P FORWARD DROP                ← legacy 表是 DROP
+$ sudo sysctl net.bridge.bridge-nf-call-iptables
+net.bridge.bridge-nf-call-iptables = 1
+```
+
+**根因**：`bridge-nf-call-iptables=1` 让**同一 bridge 内的容器互访也要经过 iptables FORWARD 链**；
+而 legacy 表的默认策略是 `DROP`，它里面仅有的 ACCEPT 规则是给 `docker0` 的，
+**不覆盖新建的 `br-*` 网桥**。nft 表策略是 ACCEPT、规则也齐全，所以只查一套表会判断错误。
+
+**修法**
+
+```bash
+sudo iptables-legacy -P FORWARD ACCEPT
+```
+
+验证：探针四个端口全部 `OK` → `up -d --force-recreate app milvus` → `app` 变成 `(healthy)`。
+
+**教训**
+
+1. **健康检查的覆盖范围，就是它的可信范围。** loopback 探针只证明"进程活着"，
+   证明不了"别人能连上它"。容器 `(healthy)` 和"服务可用"是两件事，这是第 7.2 节之后第二次撞见。
+2. `iptables` 存在 legacy / nft **两套后端**，混合环境下必须两套都查（`iptables-legacy -S`）。
+   只看 `iptables -S` 会漏掉真正生效的 DROP。
+3. 三种连接错误要分清：`timed out` = 包被丢（防火墙/转发）、
+   `Connection refused` = 没人监听、`Name or service not known` = DNS 失败。
+4. 这是环境层面的问题，compose 管不了；重建 Codespace 后会复现，
+   需要写进 `devcontainer.json` 的 `postStartCommand`（见第 12 节）。
+
 ## 8. 数据与备份
 
 ```bash
@@ -487,3 +589,128 @@ SSE 文本流的出网流量极小）/ 按量计费 / **纯净镜像，不要预
 
 > 面试时主动说出这些，比被问出来强。**"我知道它哪里不行、以及为什么现在不做"
 > 是工程判断力，不是缺陷。**
+
+---
+
+## 12. 附：GitHub Codespaces 部署（零成本方案）
+
+学生/个人项目的现实选择：不买服务器，用 GitHub 的免费云开发机拿到一个**真实公网 HTTPS 地址**。
+免费额度 120 core-hours/月（2 核机器 ≈ 60 小时），够跑通并录屏。
+
+> 注意：**GitHub Pages 只能托管静态文件**，跑不了这个后端。真正能用的是 Codespaces。
+
+### 12.1 步骤
+
+```bash
+# 本地：推代码（.env 已被 .gitignore 挡掉）
+git add -A && git commit -m "chore: 容器化部署" && git push
+
+# GitHub 仓库页 → Code ▾ → Codespaces → "..." → New with options...
+#   机器类型 2-core/8GB（够用，额度更省）；Milvus 反复 OOM 时再换 4-core/16GB
+```
+
+Codespace 内：
+
+```bash
+cd /workspaces/agri-identify
+cp .env.example .env && nano .env      # 填入 key 与 MYSQL_*_PASSWORD
+docker compose --profile deploy config | head -20
+
+# 关键：叠加 minio 覆盖文件（见 7.6），而不是改主 compose
+docker compose -f docker-compose.yml -f deploy/compose.codespace.yml \
+  --profile deploy up -d --build
+```
+
+首次要拉 mysql / nginx / milvus / minio 镜像并构建 app，**5–8 分钟**（2 核比本地慢一倍）。
+
+### 12.2 云端是空库
+
+Codespaces 里没有本地那 2940 条数据。要么灌少量数据验证链路：
+
+```bash
+docker compose -f docker-compose.yml -f deploy/compose.codespace.yml exec app \
+  python crawler/bulk_ingest_agri.py --limit 20
+
+# 注意 refresh=true：core/catalog.py 有进程内缓存，之前查过空列表会把 [] 缓存住
+curl -s "http://localhost/kb/crops?refresh=true" -H "Authorization: Bearer $TOKEN"
+```
+
+要么从本地 `dump_agri.py` 导出后传上去 `restore_agri.py` 恢复（免重算 embedding）。
+
+### 12.3 端口公开与公网验证
+
+PORTS 面板 → Port **80** → 右键 → Port Visibility → **Public**
+→ 得到 `https://<codespace>-80.app.github.dev`。
+
+```bash
+curl -s https://<codespace>-80.app.github.dev/healthz     # {"ok":true}
+```
+
+**实测结论（重要）**：GitHub 的转发层**不会缓冲 SSE**。带时间戳的 `curl -N` 显示 token
+逐秒到达（`16:23:33` → `16:23:36`），因此 `proxy_buffering off` 的效果在两级代理下依然成立。
+
+同时能看到 sse-starlette 的心跳注释，形如：
+
+```
+: ping - 2026-10-22 08:23:37.196671+00:00
+```
+
+以 `:` 开头是 SSE 注释，浏览器忽略；它的作用是穿过中间代理保活，防止长时间无数据被掐连接。
+**能看到这行，说明链路是逐段透传而不是攒批。**（若被缓冲，所有行会挤在同一秒）
+
+> Codespaces 面板里 80 端口的"进程名"可能显示成 `minio server` 之类的标签 —— 那是面板猜的。
+> `docker-proxy` 才是真实占用者（`ss -ltnp | grep ':80 '` 可证），以 `curl` 返回内容为准。
+
+### 12.4 限制
+
+| 限制 | 说明 | 对策 |
+|---|---|---|
+| 空闲 30 分钟自动停止 | 不是关机，是暂停 | 演示前手动启动 |
+| 停止 30 天不启动会被删除 | 工作区一起没 | 代码在 GitHub 上，`.env` 自己留底 |
+| **Docker 卷不保证跨 stop/start 存活** | 数据在 `/var/lib/docker`，属于 VM 磁盘 | 当作临时环境，重启后先验 `/kb/crops` |
+| Public 端口等于公开 | 任何人可调你的接口，烧你的 key | 演示完立刻改回 Private |
+| 2 核 / 7.8 GB，**无 swap** | 超内存直接 OOM kill | 盯着 `docker stats`；不够就换 4 核 |
+| `iptables-legacy` 的 FORWARD 是 DROP | 每次重建 Codespace 都会复现（见 7.7） | 见下方 `postStartCommand` |
+
+### 12.5 让环境可一键复现
+
+`.devcontainer/devcontainer.json`：
+
+```json
+{
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "postStartCommand": "sudo iptables-legacy -P FORWARD ACCEPT 2>/dev/null || true",
+  "forwardPorts": [80],
+  "hostRequirements": { "cpus": 2, "memory": "8gb", "storage": "32gb" }
+}
+```
+
+（完整版见仓库 `.devcontainer/devcontainer.json`，另含端口标签与 `postCreateCommand` 自检。）
+
+三点说明：
+
+- `universal:2` 已内置 Docker（含 `/usr/local/share/docker-init.sh`），**不需要再叠加
+  `docker-in-docker` feature**，否则可能重复安装。
+- `postStartCommand` 每次启动都执行，因为 **iptables 规则不跨 VM 重启保留**。
+- `hostRequirements.memory` 让 Codespaces 只提供满足内存要求的机型，避免手滑选到 4 GB 的。
+
+`postStartCommand` 那一行就是为了自动绕过 7.7 里那个环境级故障 —— **把环境问题写进环境定义**，
+而不是每次手工修，这才是"可复现"。
+
+> 更进一步的思路：把"环境自检"也做成脚本（检查 Docker、内存、`/kb/crops` 是否为空），
+> 让新环境起来 30 秒内就能判断"能用/不能用"。面试里这种"降低别人上手成本"的设计比功能本身更稀缺。
+
+### 12.6 与买服务器的差异
+
+| 维度 | Codespaces | 云服务器 |
+|---|---|---|
+| 成本 | ¥0（额度内） | ¥150–400/月 或按量 ¥15/次 |
+| 公网 HTTPS | 自带（GitHub 代理终止 TLS） | 要自己配证书 |
+| SSH / 安全组 / ufw | **练不到** | 完整 |
+| 数据持久性 | 不保证 | 卷/云盘可控 |
+| 系统服务 | docker-init.sh，无 systemd | systemd 完整 |
+
+**结论**：练"应用容器化 + 反代 + 依赖编排"用 Codespaces 足够；
+练"服务器运维"（SSH、防火墙、安全组、开机自启）必须上真机。
+两者互补，不必二选一。
+

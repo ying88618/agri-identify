@@ -145,6 +145,9 @@ services:
       # 上传图片必须落在宿主目录。否则重建容器后图没了，而 Redis 里的 image_id
       # 可能还在，前端拿到的是"图片不存在或不属于当前用户"，排查方向完全跑偏。
       - ./uploads:/app/uploads
+      # trace 同样要落宿主：容器重建后 /app/traces 会跟着没了，
+      # 而排查历史请求时最需要的恰恰是那些记录。
+      - ./traces:/app/traces
     expose:
       - "8000"
     depends_on:

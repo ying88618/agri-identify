@@ -21,6 +21,11 @@ async def lifespan(app: FastAPI):
     # 建表：checkfirst 保证幂等，表已存在时不发任何 DDL。；
     init_db()
     yield
+    # 关闭时必须 flush：trace writer 是后台 task，进程直接退出会丢掉队列里剩下的记录，
+    # 而 run_end 往往是最后一条 —— 也是排查时最需要的那条。
+    from core.trace import shutdown as trace_shutdown
+
+    await trace_shutdown()
 
 
 app = FastAPI(title="Agri Pest Diagnostic Agent", version="0.1.0", lifespan=lifespan)

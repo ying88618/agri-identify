@@ -1,0 +1,41 @@
+// Codespaces 环境定义。
+// 作用：任何人 clone 仓库后点 "Create codespace"，环境自动就绪，
+// 不需要再手工修 deploy.md 7.7 里那个 iptables 问题。
+{
+  "name": "agri-agent",
+
+  // universal:2 已内置 Docker（/usr/local/share/docker-init.sh），
+  // 与默认 Codespace 环境一致，因此不需要再叠加 docker-in-docker feature。
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+
+  // 每次启动都要重跑：iptables 规则不跨 VM 重启保留。
+  // 背景：net.bridge.bridge-nf-call-iptables=1 时，同网桥内容器互访也要过
+  // FORWARD 链；而 iptables-legacy 表的默认策略是 DROP，只放行了 docker0，
+  // 不含 Docker 新建的 br-*。不修的现象是"容器全部 healthy，但互相 timeout"。
+  // 详见 deploy.md 7.7。legacy 表不存在时用 || true 兜住。
+  "postStartCommand": "sudo iptables-legacy -P FORWARD ACCEPT 2>/dev/null || true",
+
+  // 只自动转发 80（唯一公网入口）。8000 是 app 的内部端口，不该直接暴露。
+  // 注意：转发 ≠ 公开。新建的端口默认 Private，需要手动改成 Public 才能从外网访问。
+  "forwardPorts": [80],
+  "portsAttributes": {
+    "80": { "label": "nginx (公网入口)", "onAutoForward": "silent" },
+    "8000": { "label": "app (内部, 勿公开)", "onAutoForward": "silent" }
+  },
+
+  // 建好之后立刻自检，环境有问题当场就能看出来，不用等 build 完才发现
+  "postCreateCommand": "docker --version && docker compose version && df -h /workspaces | tail -1",
+
+  // Milvus + MySQL + app 峰值 4–5.5 GB，低于 8 GB 会 OOM（且 Codespaces 无 swap）
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-azuretools.vscode-docker"]
+    }
+  }
+}

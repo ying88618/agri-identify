@@ -15,6 +15,7 @@
 .idea/
 .vscode/
 .codebuddy/
+.devcontainer/
 
 # ---------- 本地运行产物 ----------
 .venv/
@@ -25,6 +26,7 @@ __pycache__/
 .coverage
 htmlcov/
 uploads/
+traces/
 
 # ---------- 数据集与评测产物 ----------
 # 与 .gitignore 同一套规则：crawler/data 约 30MB，绝大多数可由脚本重新生成。

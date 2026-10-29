@@ -6,6 +6,8 @@ from .retriever import retrieve
 from .sources import kb_sources, web_sources
 from .web_search import web_search as tavily_web_search
 from .llm import llm
+from .mw.limits import build_step_limit, build_tool_limit
+from .mw.trace import TraceMiddleware
 import logging
 import contextvars
 
@@ -83,7 +85,19 @@ def set_request_context(collection_name: str,
     _current_threshold.set(score_threshold)
 
 
-AGENT = create_agent(llm, tools=[web_search, knowledge_base_search])
+# middleware 实例是全局共享的（本模块只执行一次），所以 TraceMiddleware 里
+# 不允许有任何可变实例状态 —— 所有 per-request 信息走 core/run_state 的 ContextVar。
+AGENT = create_agent(
+    llm,
+    tools=[web_search, knowledge_base_search],
+    # 顺序 = 洋葱层级：trace 在最外层，能观测到后面两个中间件的效果。
+    # limits 内部只做计数与跳转，不改请求内容。
+    middleware=[
+        TraceMiddleware(),
+        build_step_limit(),
+        build_tool_limit(),
+    ],
+)
 
 
 def get_agent():

@@ -72,3 +72,25 @@ DIAGNOSE_PLAN_K = 20
 DIAGNOSE_MAX_EVIDENCE = 3
 DIAGNOSE_MAX_PLAN = 5
 DIAGNOSE_PROMPT_VERSION = 1
+
+
+# ---------------- 结构化 trace ----------------
+# 事件落在 traces/YYYY-MM-DD.jsonl，每行一条。见 core/trace.py 与 core/mw/trace.py。
+# 关掉只需 TRACE_ENABLED=0：此时队列与 writer 都不会创建，钩子里的 trace_event 直接返回。
+TRACE_ENABLED = os.getenv("TRACE_ENABLED", "1") not in ("0", "false", "False")
+TRACE_DIR = Path(os.getenv("TRACE_DIR") or (BASE_DIR / "traces"))
+# 队列上限：满了丢记录而不是阻塞业务。观测系统必须能静默降级。
+TRACE_QUEUE_MAX = int(os.getenv("TRACE_QUEUE_MAX", "2000"))
+# 工具入参的预览长度。入参是用户描述的症状文本，属敏感内容，只留开头供人工排查。
+TRACE_ARGS_PREVIEW = int(os.getenv("TRACE_ARGS_PREVIEW", "80"))
+
+
+# ---------------- 硬停止（P2）----------------
+# 模型调用次数上限。一次"检索 → 回答"通常 2~3 次模型调用，给 6 次足够；
+# 超过还能继续，基本可以判定模型在反复试错。
+MAX_MODEL_CALLS = int(os.getenv("MAX_MODEL_CALLS", "6"))
+# 工具调用次数上限。continue 语义：超限只是提示模型别再调，不终止本次运行。
+MAX_TOOL_CALLS = int(os.getenv("MAX_TOOL_CALLS", "8"))
+# 墙钟上限（秒）。由 api/chat.py 的 asyncio.timeout 执行，不在中间件里 ——
+# 超时后仍要能推 SSE 事件。
+WALL_CLOCK_S = float(os.getenv("WALL_CLOCK_S", "90"))

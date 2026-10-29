@@ -1,0 +1,39 @@
+# Codespace 专用覆盖文件：只替换 minio，其余服务沿用 docker-compose.yml。
+#
+# 起因：minio/minio 已从 Docker Hub 下架（repository does not exist），
+#      quay.io/minio/minio 返回 401 需要认证。本地之所以能跑，是因为镜像早已缓存。
+#
+# 用法（只在云端用，不要和本地那套混）：
+#   docker compose -f docker-compose.yml -f deploy/compose.codespace.yml --profile deploy up -d
+#
+# 为什么单独一个文件而不是改主 compose：
+#   本地 WSL 的 knowledge_minio_data 卷里存着 2940 条文档的对象数据（旧镜像布局），
+#   改主文件会让本地重启时挂到不匹配的路径上，现象是"collection 全没了"。
+
+services:
+  minio:
+    image: bitnamilegacy/minio:latest
+
+    # Bitnami 镜像默认以非 root(1001) 运行，而 /minio_data 是 Docker 为命名卷新建的
+    # root 属主目录，非 root 写不进去。演示环境直接用 root，省掉一次 chown。
+    user: root
+
+    # 显式覆盖 entrypoint：Bitnami 的 entrypoint 会做自己的初始化和参数处理，
+    # 这里直接调官方 minio 二进制，行为与原来完全一致，排除变量。
+    entrypoint: ["minio"]
+    command: ["server", "/minio_data", "--console-address", ":9001"]
+
+    environment:
+      # 必须与 Milvus 内置配置里的 minioadmin/minioadmin 一致，
+      # 否则 Milvus 连得上但鉴权失败，报错指向 S3 而不是密码。
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+
+    healthcheck:
+      # Bitnami 镜像通常自带 curl；若 minio 显示 (unhealthy) 而 milvus 正常，
+      # 先 `docker compose exec minio which curl` 确认是不是探针二进制缺失，
+      # 而不是服务真挂了（此时可改为 healthcheck: {disable: true}）。
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
