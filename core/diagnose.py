@@ -320,7 +320,12 @@ async def diagnose(
     对话内容本身不接受客户端传入：客户端能塞对话，就能塞一句
     "我确定这是番茄晚疫病"，然后拿到一个结论。
     """
-    history = load_history(user_id, session_id, n=DIAGNOSE_HISTORY_TURNS)
+    # include_summary=False：抽取要求"病名逐字出现在对话里"（见 _appears_in），
+    # 而摘要是模型改写过的话术，用它做抽取等于拿二手转述当证据。
+    # 这里读 40 轮原始历史，足够覆盖正常会话。
+    history = load_history(
+        user_id, session_id, n=DIAGNOSE_HISTORY_TURNS, include_summary=False
+    )
     if not history:
         # 没聊过，或已过 CHAT_HISTORY_TTL(30min)。这两种情况前端文案相同。
         return _result(session_id, "abstain", None, [], "session_empty")

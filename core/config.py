@@ -94,3 +94,25 @@ MAX_TOOL_CALLS = int(os.getenv("MAX_TOOL_CALLS", "8"))
 # 墙钟上限（秒）。由 api/chat.py 的 asyncio.timeout 执行，不在中间件里 ——
 # 超时后仍要能推 SSE 事件。
 WALL_CLOCK_S = float(os.getenv("WALL_CLOCK_S", "90"))
+# 单次请求的累计 token 上限（含 input + output + reasoning）。
+# 实测一次模型调用约 1500~2300（推理模型 reasoning 占大头），
+# 按 8 次调用估算约 18000，故默认 20000。
+# 【口径】必须用 core/run_state 采集的真值，不能用 response.usage_metadata ——
+# 后者在本 provider 上会被膨胀上百倍（见 core/llm_usage.py）。
+MAX_TOTAL_TOKENS = int(os.getenv("MAX_TOTAL_TOKENS", "20000"))
+# 同一工具 + 同一参数连续出现多少次判定为死循环。
+# 取 3 而不是 2：模型偶发地用同样参数重查一次是正常的"再确认"，
+# 连续 3 次才足以判定它没有新信息可拿了。
+MAX_REPEAT_ACTIONS = int(os.getenv("MAX_REPEAT_ACTIONS", "3"))
+
+
+# ---------------- 跨轮次上下文压缩（P4）----------------
+# 只做"跨轮"，不做"单次运行内"：一次诊断最多 8 次模型调用，消息量不大；
+# 而工具返回的文档原文是回答与溯源的依据，压掉反而丢证据。
+SUMMARY_ENABLED = os.getenv("SUMMARY_ENABLED", "1") not in ("0", "false", "False")
+# 会话累计超过这么多条才开始压缩（一条 user + 一条 assistant 算 2 条）
+SUMMARY_TRIGGER_TURNS = int(os.getenv("SUMMARY_TRIGGER_TURNS", "12"))
+# 保留最近多少条原文。与 api/chat.py 的 HISTORY_TURNS 对齐，避免"压了又读不到"
+SUMMARY_KEEP_RECENT = int(os.getenv("SUMMARY_KEEP_RECENT", "6"))
+# 摘要硬上限（字符）。模型偶发超长时截断，避免摘要本身把上下文撑爆。
+SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "600"))

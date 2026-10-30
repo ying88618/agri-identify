@@ -19,6 +19,11 @@ class FakeRedis:
     def __init__(self, turns, raw=False):
         self.items = list(turns)
         self.raw = raw
+        # 摘要/游标存在这里；默认空，load_history 就不会插摘要
+        self.kv: dict[str, str] = {}
+
+    def get(self, key):
+        return self.kv.get(key)
 
     def llen(self, key):
         return len(self.items)
@@ -91,3 +96,29 @@ def test_skips_non_dict_json_entries(monkeypatch):
 
 def test_key_is_scoped_by_user_and_session():
     assert memory._key(7, "abc") == "user_memory:7:abc"
+
+
+def test_inserts_summary_after_first_turn(monkeypatch):
+    """摘要必须插在首条之后：首条是图片的 VL 描述，不能被动位置。"""
+    fake = FakeRedis(_turns(12))
+    fake.kv["user_memory:1:s:summary"] = "用户咨询番茄病害，已排除早疫病"
+    monkeypatch.setattr(memory, "_redis", fake)
+
+    out = memory.load_history(1, "s", n=6)
+
+    assert out[0]["content"] == "m0"
+    assert out[1]["role"] == "system"
+    assert "早前对话摘要" in out[1]["content"]
+    assert len(out) == 7  # 摘要多占一条，不挤掉窗口内的原文
+
+
+def test_include_summary_false_reads_raw_only(monkeypatch):
+    """/diagnose 走这条：抽取要求病名逐字出现在对话里，不能拿改写过的摘要当证据。"""
+    fake = FakeRedis(_turns(12))
+    fake.kv["user_memory:1:s:summary"] = "不应出现"
+    monkeypatch.setattr(memory, "_redis", fake)
+
+    out = memory.load_history(1, "s", n=6, include_summary=False)
+
+    assert all(o["role"] != "system" for o in out)
+    assert len(out) == 6

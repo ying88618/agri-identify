@@ -24,6 +24,7 @@ from core.images import (
 from core.llm import SYSTEM_PROMPT
 from core.memory import append_turn, load_history
 from core.sources import merge_sources
+from core.summary import maybe_summarize
 from core.trace import start_run, trace_event
 from core.vision import describe_image
 
@@ -87,6 +88,11 @@ async def chat_stream(req: ChatRequest, user_id: int = Depends(get_current_user)
         image_desc = await describe_image(req.image_url, req.question)
     else:
         image_desc = ""
+    # 先压缩再读：maybe_summarize 会把早期对话压成摘要写回 Redis，
+    # 随后 load_history 才有摘要可插。
+    # 它在内部吞掉所有异常（失败就不压），绝不会因为压缩失败而让对话 500。
+    await maybe_summarize(user_id, req.session_id)
+
     # 历史要在拼 user_text 之前取：作物标记是否需要注入，取决于历史里有没有。
     history = load_history(user_id, req.session_id, n=HISTORY_TURNS)
 
@@ -211,6 +217,8 @@ async def chat_stream(req: ChatRequest, user_id: int = Depends(get_current_user)
             yield JSONServerSentEvent(data={"type": "sources", "items": sources})
 
         # 顺序固定：truncated → done。前端收到 done 时状态已完整。
+        # reason 取值（前端按此映射文案，后端不返回中文）：
+        #   max_model_calls | max_tokens | wall_clock | error:XXX
         if reason:
             yield JSONServerSentEvent(data={"type": "truncated", "reason": reason})
 

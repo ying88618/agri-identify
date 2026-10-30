@@ -53,6 +53,13 @@ class RunContext:
     reasoning_tokens: int = 0
     total_tokens: int = 0
 
+    # 重复动作检测：上一步的工具签名，以及它连续出现的次数。
+    # 【必须放这里而不是中间件实例上】中间件实例是全局共享的，
+    # 若把"上一次签名"存在 self 上，两个用户问同一作物时会互相误判成重复动作 ——
+    # 而"同作物同症状"恰恰是高频正常情况。
+    last_action: str | None = None
+    repeat_count: int = 0
+
 
 _CTX: ContextVar[RunContext | None] = ContextVar("run_ctx", default=None)
 

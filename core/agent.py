@@ -6,7 +6,12 @@ from .retriever import retrieve
 from .sources import kb_sources, web_sources
 from .web_search import web_search as tavily_web_search
 from .llm import llm
-from .mw.limits import build_step_limit, build_tool_limit
+from .mw.limits import (
+    build_repeat_guard,
+    build_step_limit,
+    build_token_budget,
+    build_tool_limit,
+)
 from .mw.trace import TraceMiddleware
 import logging
 import contextvars
@@ -96,6 +101,9 @@ AGENT = create_agent(
         TraceMiddleware(),
         build_step_limit(),
         build_tool_limit(),
+        build_token_budget(),
+        # 放在最后：它在 wrap_tool_call 里短路，trace（最外层）仍能记录到这次调用
+        build_repeat_guard(),
     ],
 )
 

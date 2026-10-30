@@ -18,7 +18,71 @@ def _key(user_id: int, session_id: str) -> str:
     return f"user_memory:{user_id}:{session_id}"
 
 
-def load_history(user_id: int, session_id: str, n: int = 10) -> list[dict]:
+# ---------------- 跨轮压缩相关的读写 ----------------
+# 都放在这一层：summary 模块只负责"算什么"，不碰 Redis 细节。
+# 这样 memory 的测试用假 Redis 就能覆盖，summary 的测试用假存储也能覆盖。
+
+
+def _summary_key(user_id: int, session_id: str) -> str:
+    return f"{_key(user_id, session_id)}:summary"
+
+
+def _upto_key(user_id: int, session_id: str) -> str:
+    return f"{_key(user_id, session_id)}:upto"
+
+
+def history_length(user_id: int, session_id: str) -> int:
+    """当前会话累计条数（含首条）。压缩判断用它，不读内容。"""
+    return _redis.llen(_key(user_id, session_id))
+
+
+def read_summary(user_id: int, session_id: str) -> str | None:
+    return _redis.get(_summary_key(user_id, session_id)) or None
+
+
+def read_upto(user_id: int, session_id: str) -> int:
+    """摘要已覆盖到的位置（不含）。默认 1 —— 首条永远保留原文，从第 2 条开始压。"""
+    try:
+        return int(_redis.get(_upto_key(user_id, session_id)) or 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def write_summary(user_id: int, session_id: str, text: str, upto: int) -> None:
+    """摘要与游标一起写，各自续 TTL。
+
+    不用 pipeline：压缩只在跨阈值时发生一次，多两个 RTT 可接受，
+    换来的是测试里用一个几十行的假 Redis 就能验证。
+    """
+    _redis.set(_summary_key(user_id, session_id), text)
+    _redis.expire(_summary_key(user_id, session_id), HISTORY_TTL)
+    _redis.set(_upto_key(user_id, session_id), str(upto))
+    _redis.expire(_upto_key(user_id, session_id), HISTORY_TTL)
+
+
+def read_range(user_id: int, session_id: str, start: int, end: int) -> list[dict]:
+    """读 [start, end) 区间并解析；坏数据跳过，绝不让一条脏 JSON 打挂请求。"""
+    if end <= start:
+        return []
+    raw = _redis.lrange(_key(user_id, session_id), start, end - 1)
+    out: list[dict] = []
+    for item in raw:
+        try:
+            obj = json.loads(item)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            out.append(obj)
+    return out
+
+
+def load_history(
+    user_id: int,
+    session_id: str,
+    n: int = 10,
+    *,
+    include_summary: bool = True,
+) -> list[dict]:
     """取对话历史, 按时间正序返回 [{role, content}]
 
     【首条常驻】首条 user 消息里带着图片的 VL 描述, 而后续轮次不再传图。
@@ -49,6 +113,18 @@ def load_history(user_id: int, session_id: str, n: int = 10) -> list[dict]:
     # 保证序列不以 assistant 开头(流式中断会留下不配对的尾巴)
     while out and out[0].get("role") != "user":
         out.pop(0)
+
+    if include_summary:
+        summary = read_summary(user_id, session_id)
+        if summary:
+            # 插在首条之后：首条必须留在最前（里面是图片的 VL 描述，丢了模型就"失明"）。
+            # 用 system 角色而非 user/assistant，避免破坏对话轮次的配对关系。
+            # 注意：此时返回条数是 n+1（摘要占一条），这是有意的 ——
+            # 摘要替代的是"被压掉的十几条"，不是窗口内的内容。
+            out.insert(
+                1 if out and out[0].get("role") == "user" else 0,
+                {"role": "system", "content": f"【早前对话摘要】\n{summary}"},
+            )
     return out
 
 
