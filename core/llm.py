@@ -1,17 +1,22 @@
 import os
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from .llm_usage import UsageTrackingChatOpenAI
 
 # 必须在读取 os.getenv 之前加载 .env：本模块在 import 时就构建 ChatOpenAI，
 # 而 FastAPI 入口(main.py → chat.py → llm.py)链路上没有任何一处先调用 load_dotenv，
 # 否则 MODEL_NAME/OPENAI_API_KEY 为 None，pydantic 直接 ValidationError 启动失败。
 load_dotenv()
 
-llm = ChatOpenAI(
+# 用带用量采集的子类，而不是裸 ChatOpenAI：
+# 本 provider 在每个 chunk 都带累计 usage，LangChain 合并时会相加，
+# 导致 usage_metadata 膨胀上百倍。详见 core/llm_usage.py。
+llm = UsageTrackingChatOpenAI(
     model=os.getenv("MODEL_NAME"),
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url=os.getenv("OPENAI_BASE_URL"),
     streaming=True,
+    # 必须显式开启：否则流式响应里没有 usage，采集器拿不到东西
+    stream_usage=True,
     temperature=0.3,
 )
 

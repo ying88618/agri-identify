@@ -18,6 +18,7 @@ import time
 
 from langchain.agents.middleware import AgentMiddleware
 
+from .. import run_state
 from ..config import TRACE_ARGS_PREVIEW
 from ..trace import trace_event
 
@@ -40,22 +41,6 @@ def _args_fingerprint(args) -> tuple[int, str, str]:
     )
 
 
-def _usage_fields(response) -> dict:
-    """从 ModelResponse 里抽 usage。不同 provider 可能只在其中一处给。"""
-    usage = None
-    for m in getattr(response, "result", None) or []:
-        usage = getattr(m, "usage_metadata", None) or usage
-    if usage is None:
-        usage = getattr(response, "usage_metadata", None)
-    if not usage:
-        return {}
-    return {
-        "prompt_tokens": usage.get("input_tokens"),
-        "completion_tokens": usage.get("output_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-    }
-
-
 def _tool_calls_requested(response) -> int:
     """这一轮模型发起了几个工具调用（含并行调用）。"""
     n = 0
@@ -69,6 +54,10 @@ class TraceMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request, handler):
         t0 = time.perf_counter()
+        # 快照前后差值 = 本次模型调用的真实用量。
+        # 不能用 response.usage_metadata：那是 N 个 chunk 的累计值被相加后的膨胀值
+        # （provider 每个 chunk 都带累计 usage，LangChain 合并时相加）。
+        before = run_state.usage()
         try:
             response = await handler(request)
         except Exception as e:
@@ -80,11 +69,15 @@ class TraceMiddleware(AgentMiddleware):
             )
             raise
 
+        after = run_state.usage()
+        delta = {k: after[k] - before[k] for k in after}
         trace_event(
             "model_end",
             duration_ms=round((time.perf_counter() - t0) * 1000),
             tool_calls=_tool_calls_requested(response),
-            **_usage_fields(response),
+            # tracked = 从流式 usage 采到的真值；none = 没采到（provider 未返回 usage）
+            usage_src="tracked" if delta["total_tokens"] else "none",
+            **delta,
         )
         return response
 

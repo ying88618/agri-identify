@@ -42,6 +42,17 @@ class RunContext:
     # None = 正常结束；其余取值见 api/chat.py 的 truncated 事件
     stop_reason: str | None = None
 
+    # 累计用量。由 core/llm_usage.py 在每次模型调用结束时写入。
+    # 【为什么不用 LangChain 的 usage_metadata】provider 在每个流式 chunk 里都带
+    # "累计" usage，而 LangChain 合并 chunk 时用 add_usage 相加
+    # （langchain_core/messages/ai.py），结果是 N 个 chunk 被加了 N 次。
+    # 实测一个 12 字问题报出 60256 prompt tokens —— 膨胀约 78 倍。
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    # 推理模型把思维链也算进输出，这部分不经过流式文本，只能从 usage 里取
+    reasoning_tokens: int = 0
+    total_tokens: int = 0
+
 
 _CTX: ContextVar[RunContext | None] = ContextVar("run_ctx", default=None)
 
@@ -83,3 +94,35 @@ def set_stop_reason(reason: str) -> None:
 def get_stop_reason() -> str | None:
     ctx = _CTX.get()
     return ctx.stop_reason if ctx else None
+
+
+_USAGE_FIELDS = ("prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens")
+
+
+def usage() -> dict[str, int]:
+    """取用量快照。调用方用「后减前」得到单次调用的增量。"""
+    ctx = ensure()
+    return {f: getattr(ctx, f) for f in _USAGE_FIELDS}
+
+
+def add_usage(usage_metadata: dict | None) -> None:
+    """把一次模型调用的真实用量累加进上下文。
+
+    入参是 LangChain 归一化后的 UsageMetadata：
+        {"input_tokens": 9, "output_tokens": 1638, "total_tokens": 1647,
+         "output_token_details": {"reasoning": 631}}
+    provider 原始字段名不同，这里统一按归一化后的键读。
+    """
+    if not usage_metadata:
+        return
+    ctx = ensure()
+    prompt = int(usage_metadata.get("input_tokens") or 0)
+    completion = int(usage_metadata.get("output_tokens") or 0)
+    total = int(usage_metadata.get("total_tokens") or (prompt + completion))
+    details = usage_metadata.get("output_token_details") or {}
+    reasoning = int(details.get("reasoning") or 0)
+
+    ctx.prompt_tokens += prompt
+    ctx.completion_tokens += completion
+    ctx.reasoning_tokens += reasoning
+    ctx.total_tokens += total
